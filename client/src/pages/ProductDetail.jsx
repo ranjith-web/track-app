@@ -25,6 +25,8 @@ const ProductDetail = () => {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
+  const [analysisCached, setAnalysisCached] = useState(false)
+  const [insightsCached, setInsightsCached] = useState(false)
 
   useEffect(() => {
     fetchProductData()
@@ -41,10 +43,20 @@ const ProductDetail = () => {
       setProduct(productResponse.product)
       setPriceHistory(historyResponse.product?.priceHistory || [])
       
-      // Fetch AI analysis if available
-      if (productResponse.product?.aiAnalysis) {
+      // Automatically load AI analysis and insights
+      const priceHistory = historyResponse.product?.priceHistory || []
+      
+      // Load AI analysis if we have enough price history
+      if (priceHistory.length >= 2) {
+        handleAnalyzePrice(true) // Pass true to indicate auto-load
+      } else if (productResponse.product?.aiAnalysis) {
+        // Use existing analysis if available
         setAiAnalysis(productResponse.product.aiAnalysis)
       }
+      
+      // Load buying insights automatically
+      handleGetInsights(true) // Pass true to indicate auto-load
+      
     } catch (error) {
       console.error('Error fetching product data:', error)
       toast.error('Failed to load product details')
@@ -92,27 +104,52 @@ const ProductDetail = () => {
     }
   }
 
-  const handleAnalyzePrice = async () => {
+  const handleAnalyzePrice = async (isAutoLoad = false) => {
     try {
       setAnalyzing(true)
       const response = await apiService.analyzePrice(id)
       setAiAnalysis(response.analysis)
-      toast.success('AI analysis completed!')
+      setAnalysisCached(response.cached || false)
+      
+      // Only show toast if manually triggered (button click)
+      if (!isAutoLoad) {
+        if (response.cached) {
+          toast.success('Analysis from cache (price unchanged)', { icon: '💾' })
+        } else {
+          toast.success('AI analysis refreshed!', { icon: '✨' })
+        }
+      }
     } catch (error) {
       console.error('Error analyzing price:', error)
-      toast.error('Failed to analyze price trend')
+      // Only show error toast if manually triggered
+      if (!isAutoLoad) {
+        toast.error('Failed to analyze price trend')
+      }
     } finally {
       setAnalyzing(false)
     }
   }
 
-  const handleGetInsights = async () => {
+  const handleGetInsights = async (isAutoLoad = false) => {
     try {
       const response = await apiService.getInsights(id)
       setInsights(response.insights)
+      setInsightsCached(response.cached || false)
+      
+      // Only show toast if manually triggered (button click)
+      if (!isAutoLoad) {
+        if (response.cached) {
+          toast.success('Insights from cache (price unchanged)', { icon: '💾' })
+        } else {
+          toast.success('Insights refreshed!', { icon: '✨' })
+        }
+      }
     } catch (error) {
       console.error('Error getting insights:', error)
-      toast.error('Failed to get buying insights')
+      // Only show error toast if manually triggered
+      if (!isAutoLoad) {
+        toast.error('Failed to get buying insights')
+      }
     }
   }
 
@@ -277,25 +314,44 @@ const ProductDetail = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center">
-              <Brain className="w-6 h-6 mr-2 text-purple-600" />
-              AI Analysis
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                <Brain className="w-6 h-6 mr-2 text-purple-600" />
+                AI Analysis
+              </h2>
+              {aiAnalysis && aiAnalysis.lastAnalyzed && (
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  {analysisCached && <span title="Saved result (price unchanged)">💾</span>}
+                  {new Date(aiAnalysis.lastAnalyzed).toLocaleDateString('en-IN', { 
+                    month: 'short', 
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+              )}
+            </div>
             <button
-              onClick={handleAnalyzePrice}
+              onClick={() => handleAnalyzePrice(false)}
               disabled={analyzing || priceHistory.length < 2}
               className="btn btn-secondary text-sm"
+              title="Refresh AI analysis"
             >
               {analyzing ? (
                 <div className="loading w-4 h-4 mr-1"></div>
               ) : (
-                <TrendingUp className="w-4 h-4 mr-1" />
+                <RefreshCw className="w-4 h-4 mr-1" />
               )}
-              Analyze
+              Refresh
             </button>
           </div>
 
-          {aiAnalysis ? (
+          {analyzing && !aiAnalysis ? (
+            <div className="text-center py-8">
+              <div className="loading w-12 h-12 mx-auto mb-4"></div>
+              <p className="text-gray-600">Analyzing price trends...</p>
+            </div>
+          ) : aiAnalysis ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-gray-600">Trend:</span>
@@ -322,7 +378,7 @@ const ProductDetail = () => {
               <p className="text-gray-600">
                 {priceHistory.length < 2 
                   ? 'Need more price data for analysis' 
-                  : 'Click "Analyze" to get AI insights'
+                  : 'Loading AI insights...'
                 }
               </p>
             </div>
@@ -331,20 +387,39 @@ const ProductDetail = () => {
 
         <div className="card">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center">
-              <DollarSign className="w-6 h-6 mr-2 text-green-600" />
-              Buying Insights
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                <DollarSign className="w-6 h-6 mr-2 text-green-600" />
+                Buying Insights
+              </h2>
+              {insights && insights.lastAnalyzed && (
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  {insightsCached && <span title="Saved result (price unchanged)">💾</span>}
+                  {new Date(insights.lastAnalyzed).toLocaleDateString('en-IN', { 
+                    month: 'short', 
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+              )}
+            </div>
             <button
-              onClick={handleGetInsights}
+              onClick={() => handleGetInsights(false)}
               className="btn btn-secondary text-sm"
+              title="Refresh buying insights"
             >
-              <Brain className="w-4 h-4 mr-1" />
-              Get Insights
+              <RefreshCw className="w-4 h-4 mr-1" />
+              Refresh
             </button>
           </div>
 
-          {insights ? (
+          {!insights && loading ? (
+            <div className="text-center py-8">
+              <div className="loading w-12 h-12 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading buying insights...</p>
+            </div>
+          ) : insights ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-gray-600">Deal Score:</span>
@@ -356,6 +431,25 @@ const ProductDetail = () => {
                   {insights.isGoodDeal ? 'Yes' : 'No'}
                 </span>
               </div>
+              
+              {/* Review Summary */}
+              {insights.reviewSummary && insights.reviewSummary.totalGenuineReviews > 0 && (
+                <div className="border-t pt-3 mt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-600">Customer Rating:</span>
+                    <span className="font-semibold text-yellow-600">
+                      ⭐ {insights.reviewSummary.averageRating}/5
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>{insights.reviewSummary.totalGenuineReviews} genuine reviews</span>
+                    <span className="text-red-500">
+                      {insights.reviewSummary.fakeReviewPercentage}% fake filtered
+                    </span>
+                  </div>
+                </div>
+              )}
+              
               <div>
                 <span className="text-gray-600 block mb-2">Strategy:</span>
                 <p className="text-sm text-gray-700">{insights.strategy}</p>
@@ -368,7 +462,7 @@ const ProductDetail = () => {
           ) : (
             <div className="text-center py-8">
               <DollarSign className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">Click "Get Insights" for AI recommendations</p>
+              <p className="text-gray-600">Loading insights...</p>
             </div>
           )}
         </div>
@@ -419,6 +513,54 @@ const ProductDetail = () => {
           </div>
         )}
       </div>
+
+      {/* Customer Reviews Insights */}
+      {insights && insights.reviewSummary && insights.reviewSummary.pros && insights.reviewSummary.pros.length > 0 && (
+        <div className="card">
+          <h2 className="text-xl font-bold text-gray-900 mb-6">Customer Reviews Analysis</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Pros */}
+            <div>
+              <h3 className="font-semibold text-green-600 mb-3 flex items-center">
+                <CheckCircle className="w-5 h-5 mr-2" />
+                What Customers Like
+              </h3>
+              <ul className="space-y-2">
+                {insights.reviewSummary.pros.map((pro, index) => (
+                  <li key={index} className="text-sm text-gray-700 flex items-start">
+                    <span className="text-green-500 mr-2">✓</span>
+                    <span>{pro}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            
+            {/* Cons */}
+            {insights.reviewSummary.cons && insights.reviewSummary.cons.length > 0 && (
+              <div>
+                <h3 className="font-semibold text-red-600 mb-3 flex items-center">
+                  <AlertTriangle className="w-5 h-5 mr-2" />
+                  Common Concerns
+                </h3>
+                <ul className="space-y-2">
+                  {insights.reviewSummary.cons.map((con, index) => (
+                    <li key={index} className="text-sm text-gray-700 flex items-start">
+                      <span className="text-red-500 mr-2">✗</span>
+                      <span>{con}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+            <p className="text-xs text-blue-800">
+              💡 <strong>Fake Review Detection:</strong> We filtered out {insights.reviewSummary.fakeReviewPercentage}% suspicious reviews to show you only genuine customer feedback.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Price History Table */}
       {priceHistory.length > 0 && (

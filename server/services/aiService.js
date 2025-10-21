@@ -8,7 +8,14 @@ class AIService {
     
     if (this.apiKey) {
       this.genAI = new GoogleGenerativeAI(this.apiKey);
-      this.model = this.genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+      this.model = this.genAI.getGenerativeModel({ 
+        model: "gemini-2.0-flash-exp",
+        generationConfig: {
+          temperature: 0, // Make outputs deterministic and consistent
+          topK: 1,
+          topP: 1,
+        }
+      });
     } else {
       console.warn('GEMINI_API_KEY not found. AI features will be disabled.');
     }
@@ -92,44 +99,21 @@ class AIService {
     } catch (error) {
       console.error('AI analysis error:', error);
       
-      // Handle specific Gemini errors
-      if (error.message.includes('API_KEY_INVALID')) {
-        return {
-          trend: 'unknown',
-          confidence: 0,
-          prediction: 'AI analysis unavailable - invalid API key',
-          recommendation: 'Please check your Gemini API key configuration',
-          stability: 'unknown',
-          analysis: 'Gemini API key is invalid. Please check your configuration.'
-        };
-      } else if (error.message.includes('QUOTA_EXCEEDED')) {
-        return {
-          trend: 'unknown',
-          confidence: 0,
-          prediction: 'AI analysis unavailable - API quota exceeded',
-          recommendation: 'Please check your Gemini billing and upgrade your plan',
-          stability: 'unknown',
-          analysis: 'Gemini API quota exceeded. Please upgrade your plan or wait for quota reset.'
-        };
-      } else if (error.message.includes('RATE_LIMIT_EXCEEDED')) {
-        return {
-          trend: 'unknown',
-          confidence: 0,
-          prediction: 'AI analysis temporarily unavailable - rate limit exceeded',
-          recommendation: 'Please try again in a few minutes',
-          stability: 'unknown',
-          analysis: 'Gemini API rate limit exceeded. Please try again later.'
-        };
+      // Use fallback for ANY AI error
+      const fallbackAnalysisService = require('./fallbackAnalysisService');
+      const fallbackResult = fallbackAnalysisService.analyzePriceTrend(priceHistory);
+      
+      // Add error context
+      if (error.status === 429 || error.message.includes('quota')) {
+        fallbackResult.analysis += ' [Gemini API quota exceeded - using statistical analysis]';
+        console.warn('⚠️  Gemini API quota exceeded. Using fallback statistical analysis.');
+      } else if (error.message.includes('API_KEY_INVALID')) {
+        fallbackResult.analysis += ' [Invalid API key - using statistical analysis]';
+      } else {
+        fallbackResult.analysis += ' [AI temporarily unavailable - using statistical analysis]';
       }
       
-      return {
-        trend: 'unknown',
-        confidence: 0,
-        prediction: 'AI analysis temporarily unavailable',
-        recommendation: 'Manual price monitoring recommended',
-        stability: 'unknown',
-        analysis: 'Error in AI analysis'
-      };
+      return fallbackResult;
     }
   }
 
@@ -145,27 +129,46 @@ class AIService {
           insights: 'AI service not available'
         };
       }
+      
+      // Include review data in prompt if available
+      let reviewSection = '';
+      if (productData.reviewSummary && productData.reviewSummary.totalGenuineReviews > 0) {
+        reviewSection = `
+        
+        Customer Reviews (Genuine only, fake reviews filtered):
+        - Average Rating: ${productData.reviewSummary.averageRating}/5
+        - Total Genuine Reviews: ${productData.reviewSummary.totalGenuineReviews}
+        - Sentiment: ${productData.reviewSummary.sentiment}
+        - Pros: ${productData.reviewSummary.pros.join(', ')}
+        - Cons: ${productData.reviewSummary.cons.join(', ')}
+        - Fake Review Rate: ${productData.reviewSummary.fakeReviewPercentage}%
+        `;
+      }
+      
       const prompt = `
         Analyze this product and provide buying insights:
         
         Product: ${productData.name}
-        Current Price: ${productData.currentPrice}
-        Price History: ${JSON.stringify(productData.priceHistory?.slice(-5) || [])}
+        Current Price: ₹${productData.currentPrice}
+        Price History: ${JSON.stringify(productData.priceHistory?.slice(-5) || [])}${reviewSection}
         
-        Provide insights on:
-        1. Is this a good deal?
+        Provide comprehensive insights considering:
+        1. Is this a good deal based on price AND reviews?
         2. Price comparison across platforms
-        3. Seasonal trends
-        4. Best buying strategy
+        3. Customer satisfaction (if reviews available)
+        4. Seasonal trends
+        5. Best buying strategy
+        
+        ${reviewSection ? 'IMPORTANT: Factor in the genuine customer reviews. High ratings and positive reviews increase deal score. Low ratings decrease it.' : ''}
         
         Respond in JSON format:
         {
           "dealScore": 85,
           "isGoodDeal": true,
-          "priceComparison": "Amazon offers best price",
+          "priceComparison": "Amazon offers best price at ₹X",
           "seasonalTrend": "Prices typically drop in December",
-          "strategy": "Wait for next sale or buy now if urgent",
-          "insights": "Detailed buying recommendations"
+          "strategy": "Buy now - good price and excellent reviews",
+          "insights": "Detailed buying recommendations including review analysis"
         }
       `;
 
@@ -194,44 +197,16 @@ class AIService {
     } catch (error) {
       console.error('AI insights error:', error);
       
-      // Handle specific Gemini errors
-      if (error.message.includes('API_KEY_INVALID')) {
-        return {
-          dealScore: 0,
-          isGoodDeal: false,
-          priceComparison: 'AI analysis unavailable - invalid API key',
-          seasonalTrend: 'No data available',
-          strategy: 'Please check your Gemini API key configuration',
-          insights: 'Gemini API key is invalid. Please check your configuration.'
-        };
-      } else if (error.message.includes('QUOTA_EXCEEDED')) {
-        return {
-          dealScore: 0,
-          isGoodDeal: false,
-          priceComparison: 'AI analysis unavailable - API quota exceeded',
-          seasonalTrend: 'No data available',
-          strategy: 'Please check your Gemini billing and upgrade your plan',
-          insights: 'Gemini API quota exceeded. Please upgrade your plan or wait for quota reset.'
-        };
-      } else if (error.message.includes('RATE_LIMIT_EXCEEDED')) {
-        return {
-          dealScore: 0,
-          isGoodDeal: false,
-          priceComparison: 'AI analysis temporarily unavailable - rate limit exceeded',
-          seasonalTrend: 'No data available',
-          strategy: 'Please try again in a few minutes',
-          insights: 'Gemini API rate limit exceeded. Please try again later.'
-        };
+      // Use fallback for ANY AI error
+      const fallbackAnalysisService = require('./fallbackAnalysisService');
+      const fallbackResult = fallbackAnalysisService.getPriceInsights(productData);
+      
+      // Add error context
+      if (error.status === 429 || error.message.includes('quota')) {
+        console.warn('⚠️  Gemini API quota exceeded. Using fallback statistical analysis.');
       }
       
-      return {
-        dealScore: 0,
-        isGoodDeal: false,
-        priceComparison: 'Analysis unavailable',
-        seasonalTrend: 'No data available',
-        strategy: 'Manual research recommended',
-        insights: 'AI analysis temporarily unavailable'
-      };
+      return fallbackResult;
     }
   }
 

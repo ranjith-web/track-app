@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const aiService = require('../services/aiService');
+const reviewAnalysisService = require('../services/reviewAnalysisService');
+const scraperService = require('../services/scraperService');
 
 // Analyze price trend for a product
 router.post('/analyze/:productId', async (req, res) => {
@@ -18,20 +20,56 @@ router.post('/analyze/:productId', async (req, res) => {
       });
     }
 
-    // Get AI analysis
+    // Get current lowest price
+    const currentPrice = Object.values(product.currentPrice || {})
+      .filter(p => p && p > 0)
+      .reduce((min, p) => Math.min(min, p), Infinity);
+
+    // Check if we have cached analysis and price hasn't changed significantly
+    if (product.aiAnalysis && 
+        product.aiAnalysis.lastAnalyzed &&
+        product.aiAnalysis.priceSnapshot) {
+      
+      const hoursSinceAnalysis = (Date.now() - product.aiAnalysis.lastAnalyzed) / (1000 * 60 * 60);
+      const priceChangePercent = Math.abs((currentPrice - product.aiAnalysis.priceSnapshot) / product.aiAnalysis.priceSnapshot * 100);
+      
+      // Return cached analysis if:
+      // - Analyzed within last 24 hours AND
+      // - Price changed less than 5%
+      if (hoursSinceAnalysis < 24 && priceChangePercent < 5) {
+        console.log(`✅ Returning cached AI analysis (${hoursSinceAnalysis.toFixed(1)}h old, ${priceChangePercent.toFixed(1)}% price change)`);
+        return res.json({
+          message: 'Analysis returned from cache',
+          analysis: product.aiAnalysis,
+          cached: true,
+          cacheAge: `${hoursSinceAnalysis.toFixed(1)} hours`
+        });
+      }
+    }
+
+    // Generate fresh AI analysis
+    console.log('🔄 Generating fresh AI analysis...');
     const analysis = await aiService.analyzePriceTrend(product.priceHistory);
     
-    // Update product with AI analysis
+    // Save complete analysis to database
     product.aiAnalysis = {
-      ...analysis,
-      lastAnalyzed: new Date()
+      trend: analysis.trend,
+      confidence: analysis.confidence,
+      prediction: analysis.prediction,
+      recommendation: analysis.recommendation,
+      stability: analysis.stability,
+      analysis: analysis.analysis,
+      lastAnalyzed: new Date(),
+      priceSnapshot: currentPrice
     };
     
     await product.save();
+    console.log('✅ AI analysis saved to database');
 
     res.json({
-      message: 'Price analysis completed',
-      analysis
+      message: 'Fresh price analysis completed',
+      analysis: product.aiAnalysis,
+      cached: false
     });
   } catch (error) {
     console.error('AI analysis error:', error);
@@ -48,10 +86,113 @@ router.get('/insights/:productId', async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const insights = await aiService.getPriceInsights(product);
+    // Get current lowest price
+    const currentPrice = Object.values(product.currentPrice || {})
+      .filter(p => p && p > 0)
+      .reduce((min, p) => Math.min(min, p), Infinity);
+
+    // Check if we have cached insights and price hasn't changed significantly
+    if (product.buyingInsights && 
+        product.buyingInsights.lastAnalyzed &&
+        product.buyingInsights.priceSnapshot) {
+      
+      const hoursSinceAnalysis = (Date.now() - product.buyingInsights.lastAnalyzed) / (1000 * 60 * 60);
+      const priceChangePercent = Math.abs((currentPrice - product.buyingInsights.priceSnapshot) / product.buyingInsights.priceSnapshot * 100);
+      
+      // Return cached insights if:
+      // - Analyzed within last 24 hours AND
+      // - Price changed less than 5%
+      if (hoursSinceAnalysis < 24 && priceChangePercent < 5) {
+        console.log(`✅ Returning cached buying insights (${hoursSinceAnalysis.toFixed(1)}h old, ${priceChangePercent.toFixed(1)}% price change)`);
+        return res.json({
+          insights: product.buyingInsights,
+          cached: true,
+          cacheAge: `${hoursSinceAnalysis.toFixed(1)} hours`
+        });
+      }
+    }
+
+    // Check if we need to scrape reviews (scrape every 7 days)
+    let reviewSummary = product.buyingInsights?.reviewSummary || null;
+    const shouldScrapeReviews = !product.reviews?.lastScraped || 
+                                (Date.now() - product.reviews.lastScraped) > (7 * 24 * 60 * 60 * 1000);
+
+    if (shouldScrapeReviews && product.urls) {
+      console.log('📝 Scraping and analyzing reviews...');
+      
+      // Get URL (prefer Amazon, then Flipkart)
+      const url = product.urls.amazon || product.urls.flipkart;
+      
+      if (url) {
+        try {
+          // Scrape reviews
+          const rawReviews = await scraperService.scrapeReviews(url, 20);
+          
+          if (rawReviews.length > 0) {
+            // Filter fake reviews
+            const filtered = await reviewAnalysisService.filterGenuineReviews(rawReviews);
+            
+            // Generate insights from genuine reviews
+            const reviewInsights = await reviewAnalysisService.generateReviewInsights(filtered.genuine);
+            
+            // Save review summary
+            reviewSummary = {
+              averageRating: reviewInsights.averageRating,
+              totalGenuineReviews: filtered.stats.genuine,
+              sentiment: reviewInsights.sentiment,
+              pros: reviewInsights.pros,
+              cons: reviewInsights.cons,
+              fakeReviewPercentage: 100 - filtered.stats.genuinePercentage
+            };
+            
+            // Update product reviews stats
+            product.reviews = {
+              lastScraped: new Date(),
+              totalReviews: filtered.stats.total,
+              genuineReviews: filtered.stats.genuine,
+              suspiciousReviews: filtered.stats.suspicious
+            };
+            
+            console.log(`✅ Reviews analyzed: ${filtered.stats.genuine}/${filtered.stats.total} genuine (${filtered.stats.genuinePercentage}%)`);
+          }
+        } catch (error) {
+          console.error('Review scraping error:', error);
+          // Continue with insights even if reviews fail
+        }
+      }
+    }
+
+    // Prepare product data including reviews
+    const productData = {
+      name: product.name,
+      currentPrice: currentPrice,
+      priceHistory: product.priceHistory,
+      reviewSummary: reviewSummary
+    };
+
+    // Generate fresh insights (now includes review data)
+    console.log('🔄 Generating fresh buying insights...');
+    const insights = await aiService.getPriceInsights(productData);
+
+    // Save complete insights to database
+    product.buyingInsights = {
+      dealScore: insights.dealScore,
+      isGoodDeal: insights.isGoodDeal,
+      priceComparison: insights.priceComparison,
+      seasonalTrend: insights.seasonalTrend,
+      strategy: insights.strategy,
+      insights: insights.insights,
+      lastAnalyzed: new Date(),
+      priceSnapshot: currentPrice,
+      reviewSummary: reviewSummary
+    };
+    
+    await product.save();
+    console.log('✅ Buying insights saved to database');
 
     res.json({
-      insights
+      insights: product.buyingInsights,
+      cached: false
     });
   } catch (error) {
     console.error('Get insights error:', error);

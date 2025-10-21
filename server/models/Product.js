@@ -28,10 +28,38 @@ const productSchema = new mongoose.Schema({
   },
   priceHistory: [priceHistorySchema],
   aiAnalysis: {
-    priceTrend: { type: String }, // 'increasing', 'decreasing', 'stable'
+    trend: { type: String }, // 'increasing', 'decreasing', 'stable', 'volatile'
     confidence: { type: Number },
     prediction: { type: String },
-    lastAnalyzed: { type: Date }
+    recommendation: { type: String },
+    stability: { type: String },
+    analysis: { type: String },
+    lastAnalyzed: { type: Date },
+    priceSnapshot: { type: Number } // Price when analysis was done
+  },
+  buyingInsights: {
+    dealScore: { type: Number },
+    isGoodDeal: { type: Boolean },
+    priceComparison: { type: String },
+    seasonalTrend: { type: String },
+    strategy: { type: String },
+    insights: { type: String },
+    lastAnalyzed: { type: Date },
+    priceSnapshot: { type: Number }, // Price when insights were generated
+    reviewSummary: {
+      averageRating: { type: Number },
+      totalGenuineReviews: { type: Number },
+      sentiment: { type: String },
+      pros: [{ type: String }],
+      cons: [{ type: String }],
+      fakeReviewPercentage: { type: Number }
+    }
+  },
+  reviews: {
+    lastScraped: { type: Date },
+    totalReviews: { type: Number, default: 0 },
+    genuineReviews: { type: Number, default: 0 },
+    suspiciousReviews: { type: Number, default: 0 }
   },
   isActive: { type: Boolean, default: true },
   clickCount: { type: Number, default: 0 },
