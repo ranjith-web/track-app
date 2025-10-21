@@ -56,8 +56,33 @@ const ProductDetail = () => {
   const handleUpdatePrice = async () => {
     try {
       setUpdating(true)
-      await apiService.updatePrice(id)
-      toast.success('Price updated successfully!')
+      const response = await apiService.updatePrice(id)
+      
+      // Show different messages based on cache/scrape status
+      if (response.updateInfo) {
+        const { cached, scraped, failed } = response.updateInfo
+        
+        if (cached.length > 0 && scraped.length === 0) {
+          toast.success('Prices retrieved from cache (updated within last hour)', {
+            icon: '⚡',
+            duration: 3000
+          })
+        } else if (scraped.length > 0) {
+          toast.success(`Fresh prices fetched from ${scraped.join(', ')}!`, {
+            icon: '✅',
+            duration: 3000
+          })
+        }
+        
+        if (failed.length > 0) {
+          toast.error(`Failed to update: ${failed.join(', ')}`, {
+            duration: 4000
+          })
+        }
+      } else {
+        toast.success('Price updated successfully!')
+      }
+      
       fetchProductData() // Refresh data
     } catch (error) {
       console.error('Error updating price:', error)

@@ -32,21 +32,29 @@
    - Smart rate limiting
    - Automatic cleanup
    
-2. **`server/routes/trackerRoutes.js`** - API routes for tracker management
+2. **`server/services/requestQueue.js`** - Request queue & caching system
+   - Queues multiple requests per domain
+   - Smart caching (1 hour TTL)
+   - Auto cleanup of expired cache
+   
+3. **`server/routes/trackerRoutes.js`** - API routes for tracker management
    - Status endpoint
    - Manual trigger endpoint
 
-3. **`.gitignore` (root, client, server)** - Proper Git ignore files
+4. **`.gitignore` (root, client, server)** - Proper Git ignore files
 
-4. **`PRICE_TRACKING_GUIDE.md`** - Comprehensive documentation
+5. **`PRICE_TRACKING_GUIDE.md`** - Comprehensive documentation
 
-5. **`IMPLEMENTATION_SUMMARY.md`** - This file
+6. **`REQUEST_QUEUE_GUIDE.md`** - Queue system documentation
+
+7. **`IMPLEMENTATION_SUMMARY.md`** - This file
 
 ### Modified Files:
 1. **`server/index.js`** - Added tracker service initialization
 2. **`server/services/aiService.js`** - Updated Gemini model name
-3. **`server/services/scraperService.js`** - Added respectful rate limiting
-4. **`client/src/pages/ProductDetail.jsx`** - Better empty state message
+3. **`server/services/scraperService.js`** - Added request queue & caching
+4. **`server/routes/priceRoutes.js`** - Enhanced with cache info & queue status
+5. **`client/src/pages/ProductDetail.jsx`** - Better messages (cached vs fresh data)
 
 ---
 
@@ -60,11 +68,20 @@ Price changed? → Save to priceHistory
 Build history over time → Display in charts
 ```
 
+### Request Queue & Caching:
+```
+User clicks "Update" → Check cache first
+Cache hit (< 1 hour old)? → Return INSTANTLY ⚡
+Cache miss? → Queue request → Scrape → Cache result
+Multiple rapid requests? → All succeed, no errors! ✅
+```
+
 ### User Experience:
 1. User adds product → Initial price saved
 2. System tracks automatically → No user action needed
-3. Week 1: Basic trends visible
-4. **Month 3: Full historical data!** 📊
+3. Manual updates use smart cache → Instant responses
+4. Week 1: Basic trends visible
+5. **Month 3: Full historical data!** 📊
 
 ---
 
@@ -87,19 +104,30 @@ Build history over time → Display in charts
 ## ⚖️ Legal & Safety Improvements
 
 ### What Makes It Safer:
-1. **Rate Limiting**: 
+1. **Request Queue**: 
+   - Queues multiple requests gracefully
+   - No rate limit violations
+   - Professional request handling
+   
+2. **Smart Caching** (NEW!):
+   - 1-hour cache per URL
+   - 10 users = 1 scrape (not 10!)
+   - Dramatically reduces server load
+   
+3. **Rate Limiting**: 
    - 10 seconds between same domain
    - 30 seconds between products
    
-2. **Limited Frequency**: 
-   - Only 3 times per day
-   - Not aggressive scraping
+4. **Limited Frequency**: 
+   - Only 3 times per day (automated)
+   - Manual requests use cache
    
-3. **Smart Caching**: 
-   - Only saves when price changes
-   - Reduces unnecessary requests
+5. **No Proxy/IP Rotation**:
+   - Avoided expensive ($50-300/month)
+   - Avoided legally risky approach
+   - Using respectful caching instead
 
-4. **Respectful Design**:
+6. **Respectful Design**:
    - Follows web scraping best practices
    - Can add robots.txt compliance later
 

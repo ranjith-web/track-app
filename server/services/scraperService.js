@@ -1,14 +1,18 @@
 const { chromium } = require('playwright');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const requestQueue = require('./requestQueue');
 
 class ScraperService {
   constructor() {
     this.browser = null;
     this.maxRetries = 3;
     this.retryDelay = 2000;
-    this.lastRequestTime = {};
-    this.minDelay = 10000; // 10 seconds minimum between requests to same domain
+    
+    // Start cache cleanup interval (every 10 minutes)
+    setInterval(() => {
+      requestQueue.cleanupCache();
+    }, 600000);
   }
 
   async initBrowser() {
@@ -236,18 +240,32 @@ class ScraperService {
 
   async scrapeProduct(url) {
     try {
-      // Respectful rate limiting - enforce delay between requests to same domain
-      await this.respectfulDelay(url);
-      
-      if (url.includes('amazon.')) {
-        return await this.scrapeAmazon(url);
-      } else if (url.includes('flipkart.')) {
-        return await this.scrapeFlipkart(url);
-      } else if (url.includes('myntra.')) {
-        return await this.scrapeMyntra(url);
-      } else {
-        throw new Error('Unsupported e-commerce platform');
-      }
+      const domain = new URL(url).hostname;
+      const cacheKey = `scrape:${url}`;
+
+      // Use request queue with caching
+      const result = await requestQueue.enqueue(
+        domain,
+        async () => {
+          // Actual scraping operation
+          if (url.includes('amazon.')) {
+            return await this.scrapeAmazon(url);
+          } else if (url.includes('flipkart.')) {
+            return await this.scrapeFlipkart(url);
+          } else if (url.includes('myntra.')) {
+            return await this.scrapeMyntra(url);
+          } else {
+            throw new Error('Unsupported e-commerce platform');
+          }
+        },
+        {
+          cacheKey,
+          cacheDuration: 3600000 // 1 hour cache
+        }
+      );
+
+      return result;
+
     } catch (error) {
       console.error('Scraping error:', error);
       // Provide more specific error messages
@@ -263,20 +281,19 @@ class ScraperService {
     }
   }
 
-  // Respectful rate limiting
-  async respectfulDelay(url) {
-    const domain = new URL(url).hostname;
-    const lastRequest = this.lastRequestTime[domain] || 0;
-    const now = Date.now();
-    const timeSinceLastRequest = now - lastRequest;
+  // Get queue status (useful for API endpoints)
+  getQueueStatus() {
+    return requestQueue.getAllQueuesStatus();
+  }
 
-    if (timeSinceLastRequest < this.minDelay) {
-      const waitTime = this.minDelay - timeSinceLastRequest;
-      console.log(`⏳ Rate limiting: waiting ${waitTime}ms before scraping ${domain}`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+  // Clear cache manually if needed
+  clearCache(url = null) {
+    if (url) {
+      const cacheKey = `scrape:${url}`;
+      requestQueue.clearCache(cacheKey);
+    } else {
+      requestQueue.clearCache();
     }
-
-    this.lastRequestTime[domain] = Date.now();
   }
 
   async getProductInfo(url) {

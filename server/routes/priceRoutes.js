@@ -110,24 +110,40 @@ router.post('/update/:productId', async (req, res) => {
     // Get all active URLs
     const urls = Object.values(product.urls).filter(url => url);
     const updatedPrices = {};
+    const updateInfo = {
+      cached: [],
+      scraped: [],
+      failed: []
+    };
 
     for (const url of urls) {
       try {
         const productInfo = await scraperService.getProductInfo(url);
         const source = scraperService.getSourceFromUrl(url);
         
+        // Track if result was from cache
+        if (productInfo.fromCache) {
+          updateInfo.cached.push(source);
+        } else {
+          updateInfo.scraped.push(source);
+        }
+        
         if (productInfo.price) {
           updatedPrices[source] = productInfo.price;
           
-          // Add to price history
-          product.priceHistory.push({
-            price: productInfo.price,
-            source: source,
-            availability: productInfo.availability,
-            discount: productInfo.discount
-          });
+          // Only add to price history if it's a new scrape (not cached)
+          if (!productInfo.fromCache) {
+            product.priceHistory.push({
+              price: productInfo.price,
+              source: source,
+              availability: productInfo.availability,
+              discount: productInfo.discount
+            });
+          }
         }
       } catch (error) {
+        const source = scraperService.getSourceFromUrl(url);
+        updateInfo.failed.push(source);
         console.error(`Failed to update price for ${url}:`, error);
       }
     }
@@ -139,9 +155,17 @@ router.post('/update/:productId', async (req, res) => {
     await product.save();
 
     res.json({
-      message: 'Prices updated successfully',
+      message: updateInfo.cached.length > 0 
+        ? 'Prices returned from cache (recently updated)' 
+        : 'Prices updated successfully',
       updatedPrices,
-      lastChecked: product.lastChecked
+      lastChecked: product.lastChecked,
+      updateInfo: {
+        cached: updateInfo.cached,
+        scraped: updateInfo.scraped,
+        failed: updateInfo.failed,
+        queueWaitTime: updateInfo.scraped.length > 0 ? 'Processed' : 'Instant (cached)'
+      }
     });
   } catch (error) {
     console.error('Update price error:', error);
@@ -243,8 +267,9 @@ router.post('/test-scrape', async (req, res) => {
     const productInfo = await scraperService.getProductInfo(url);
     
     res.json({
-      message: 'Scraping test successful',
-      productInfo
+      message: productInfo.fromCache ? 'Returned from cache' : 'Scraping test successful',
+      productInfo,
+      fromCache: productInfo.fromCache || false
     });
   } catch (error) {
     console.error('Test scraping error:', error);
@@ -252,6 +277,34 @@ router.post('/test-scrape', async (req, res) => {
       error: 'Scraping test failed',
       details: error.message 
     });
+  }
+});
+
+// Get queue status
+router.get('/queue-status', (req, res) => {
+  try {
+    const queueStatus = scraperService.getQueueStatus();
+    res.json({
+      queues: queueStatus,
+      totalQueued: queueStatus.reduce((sum, q) => sum + q.queueLength, 0)
+    });
+  } catch (error) {
+    console.error('Get queue status error:', error);
+    res.status(500).json({ error: 'Failed to get queue status' });
+  }
+});
+
+// Clear cache endpoint (useful for testing)
+router.post('/clear-cache', (req, res) => {
+  try {
+    const { url } = req.body;
+    scraperService.clearCache(url);
+    res.json({ 
+      message: url ? `Cache cleared for ${url}` : 'All cache cleared' 
+    });
+  } catch (error) {
+    console.error('Clear cache error:', error);
+    res.status(500).json({ error: 'Failed to clear cache' });
   }
 });
 
