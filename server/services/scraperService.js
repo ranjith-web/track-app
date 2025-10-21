@@ -7,6 +7,8 @@ class ScraperService {
     this.browser = null;
     this.maxRetries = 3;
     this.retryDelay = 2000;
+    this.lastRequestTime = {};
+    this.minDelay = 10000; // 10 seconds minimum between requests to same domain
   }
 
   async initBrowser() {
@@ -234,6 +236,9 @@ class ScraperService {
 
   async scrapeProduct(url) {
     try {
+      // Respectful rate limiting - enforce delay between requests to same domain
+      await this.respectfulDelay(url);
+      
       if (url.includes('amazon.')) {
         return await this.scrapeAmazon(url);
       } else if (url.includes('flipkart.')) {
@@ -256,6 +261,22 @@ class ScraperService {
         throw new Error('Failed to scrape product information. Please check the URL and try again.');
       }
     }
+  }
+
+  // Respectful rate limiting
+  async respectfulDelay(url) {
+    const domain = new URL(url).hostname;
+    const lastRequest = this.lastRequestTime[domain] || 0;
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequest;
+
+    if (timeSinceLastRequest < this.minDelay) {
+      const waitTime = this.minDelay - timeSinceLastRequest;
+      console.log(`⏳ Rate limiting: waiting ${waitTime}ms before scraping ${domain}`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+
+    this.lastRequestTime[domain] = Date.now();
   }
 
   async getProductInfo(url) {

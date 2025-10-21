@@ -40,6 +40,8 @@ const connectDB = require('./config/database');
 const priceRoutes = require('./routes/priceRoutes');
 const productRoutes = require('./routes/productRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const trackerRoutes = require('./routes/trackerRoutes');
+const priceTrackerService = require('./services/priceTrackerService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -73,6 +75,7 @@ connectDB();
 app.use('/api/prices', priceRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/tracker', trackerRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -96,4 +99,7 @@ app.use('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Start automated price tracking
+  priceTrackerService.startTracking();
 });

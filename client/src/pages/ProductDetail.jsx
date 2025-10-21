@@ -350,12 +350,13 @@ const ProductDetail = () => {
       </div>
 
       {/* Price History Chart */}
-      {chartData.length > 0 && (
-        <div className="card">
-          <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-            <BarChart3 className="w-6 h-6 mr-2 text-blue-600" />
-            Price History (Last 3 Months)
-          </h2>
+      <div className="card">
+        <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+          <BarChart3 className="w-6 h-6 mr-2 text-blue-600" />
+          Price History (Last 3 Months)
+        </h2>
+        
+        {chartData.length > 0 ? (
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
@@ -376,8 +377,23 @@ const ProductDetail = () => {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="text-center py-12 bg-blue-50 rounded-lg">
+            <Calendar className="w-16 h-16 text-blue-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Building Price History...
+            </h3>
+            <p className="text-gray-600 mb-4 max-w-md mx-auto">
+              We're tracking this product's price automatically 3 times a day. 
+              Historical data will appear here as we collect more price points over time.
+            </p>
+            <div className="text-sm text-gray-500">
+              <p>📊 Price checks: 8:00 AM, 2:00 PM, 8:00 PM IST</p>
+              <p className="mt-1">🔄 Next check scheduled automatically</p>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Price History Table */}
       {priceHistory.length > 0 && (
