@@ -1,0 +1,436 @@
+import React, { useState, useEffect } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { 
+  ArrowLeft, 
+  RefreshCw, 
+  TrendingUp, 
+  Brain, 
+  DollarSign, 
+  Calendar,
+  ExternalLink,
+  AlertTriangle,
+  CheckCircle,
+  BarChart3
+} from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { apiService } from '../services/apiService'
+import toast from 'react-hot-toast'
+
+const ProductDetail = () => {
+  const { id } = useParams()
+  const [product, setProduct] = useState(null)
+  const [priceHistory, setPriceHistory] = useState([])
+  const [aiAnalysis, setAiAnalysis] = useState(null)
+  const [insights, setInsights] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [updating, setUpdating] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+
+  useEffect(() => {
+    fetchProductData()
+  }, [id])
+
+  const fetchProductData = async () => {
+    try {
+      setLoading(true)
+      const [productResponse, historyResponse] = await Promise.all([
+        apiService.getProduct(id),
+        apiService.getPriceHistory(id)
+      ])
+      
+      setProduct(productResponse.product)
+      setPriceHistory(historyResponse.product?.priceHistory || [])
+      
+      // Fetch AI analysis if available
+      if (productResponse.product?.aiAnalysis) {
+        setAiAnalysis(productResponse.product.aiAnalysis)
+      }
+    } catch (error) {
+      console.error('Error fetching product data:', error)
+      toast.error('Failed to load product details')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUpdatePrice = async () => {
+    try {
+      setUpdating(true)
+      await apiService.updatePrice(id)
+      toast.success('Price updated successfully!')
+      fetchProductData() // Refresh data
+    } catch (error) {
+      console.error('Error updating price:', error)
+      toast.error('Failed to update price')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const handleAnalyzePrice = async () => {
+    try {
+      setAnalyzing(true)
+      const response = await apiService.analyzePrice(id)
+      setAiAnalysis(response.analysis)
+      toast.success('AI analysis completed!')
+    } catch (error) {
+      console.error('Error analyzing price:', error)
+      toast.error('Failed to analyze price trend')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  const handleGetInsights = async () => {
+    try {
+      const response = await apiService.getInsights(id)
+      setInsights(response.insights)
+    } catch (error) {
+      console.error('Error getting insights:', error)
+      toast.error('Failed to get buying insights')
+    }
+  }
+
+  const getLowestPrice = (currentPrice) => {
+    if (!currentPrice) return null
+    const prices = Object.values(currentPrice).filter(price => price && price > 0)
+    return prices.length > 0 ? Math.min(...prices) : null
+  }
+
+  const getPriceSources = (currentPrice) => {
+    if (!currentPrice) return []
+    return Object.entries(currentPrice)
+      .filter(([_, price]) => price && price > 0)
+      .map(([source, price]) => ({ source, price }))
+  }
+
+  const formatPriceHistory = (history) => {
+    return history.map(entry => ({
+      date: new Date(entry.timestamp).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+      price: entry.price,
+      source: entry.source
+    }))
+  }
+
+  const getTrendColor = (trend) => {
+    switch (trend) {
+      case 'increasing': return 'text-red-600'
+      case 'decreasing': return 'text-green-600'
+      case 'stable': return 'text-blue-600'
+      default: return 'text-gray-600'
+    }
+  }
+
+  const getTrendIcon = (trend) => {
+    switch (trend) {
+      case 'increasing': return '↗️'
+      case 'decreasing': return '↘️'
+      case 'stable': return '→'
+      default: return '❓'
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="loading"></div>
+      </div>
+    )
+  }
+
+  if (!product) {
+    return (
+      <div className="text-center py-12">
+        <AlertTriangle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Product Not Found</h3>
+        <p className="text-gray-600 mb-6">The product you're looking for doesn't exist.</p>
+        <Link to="/products" className="btn btn-primary">
+          <ArrowLeft className="w-5 h-5 mr-2" />
+          Back to Products
+        </Link>
+      </div>
+    )
+  }
+
+  const lowestPrice = getLowestPrice(product.currentPrice)
+  const priceSources = getPriceSources(product.currentPrice)
+  const chartData = formatPriceHistory(priceHistory)
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <Link to="/products" className="btn btn-secondary">
+          <ArrowLeft className="w-5 h-5 mr-2" />
+          Back to Products
+        </Link>
+        <button
+          onClick={handleUpdatePrice}
+          disabled={updating}
+          className="btn btn-primary"
+        >
+          {updating ? (
+            <div className="loading w-4 h-4 mr-2"></div>
+          ) : (
+            <RefreshCw className="w-5 h-5 mr-2" />
+          )}
+          Update Price
+        </button>
+      </div>
+
+      {/* Product Info */}
+      <div className="card">
+        <div className="flex flex-col lg:flex-row gap-6">
+          {product.image && (
+            <img
+              src={product.image}
+              alt={product.name}
+              className="w-full lg:w-64 h-64 object-cover rounded-lg"
+            />
+          )}
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">{product.name}</h1>
+            
+            {lowestPrice && (
+              <div className="text-4xl font-bold text-green-600 mb-4">
+                ₹{lowestPrice.toLocaleString()}
+              </div>
+            )}
+
+            {priceSources.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Available on:</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {priceSources.map(({ source, price }) => (
+                    <div key={source} className="border rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium capitalize">{source}</span>
+                        <span className="text-lg font-bold text-green-600">
+                          ₹{price.toLocaleString()}
+                        </span>
+                      </div>
+                      <a
+                        href={product.urls?.[source]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm mt-2"
+                      >
+                        <ExternalLink className="w-4 h-4 mr-1" />
+                        Visit Store
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+              <div>
+                <div className="text-gray-500">Clicks</div>
+                <div className="font-semibold">{product.clickCount || 0}</div>
+              </div>
+              <div>
+                <div className="text-gray-500">Last Checked</div>
+                <div className="font-semibold">
+                  {new Date(product.lastChecked).toLocaleDateString('en-IN')}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-500">Price Points</div>
+                <div className="font-semibold">{priceHistory.length}</div>
+              </div>
+              <div>
+                <div className="text-gray-500">Status</div>
+                <div className="font-semibold text-green-600">Active</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Analysis */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center">
+              <Brain className="w-6 h-6 mr-2 text-purple-600" />
+              AI Analysis
+            </h2>
+            <button
+              onClick={handleAnalyzePrice}
+              disabled={analyzing || priceHistory.length < 2}
+              className="btn btn-secondary text-sm"
+            >
+              {analyzing ? (
+                <div className="loading w-4 h-4 mr-1"></div>
+              ) : (
+                <TrendingUp className="w-4 h-4 mr-1" />
+              )}
+              Analyze
+            </button>
+          </div>
+
+          {aiAnalysis ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">Trend:</span>
+                <span className={`font-semibold ${getTrendColor(aiAnalysis.trend)}`}>
+                  {getTrendIcon(aiAnalysis.trend)} {aiAnalysis.trend?.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">Confidence:</span>
+                <span className="font-semibold">{aiAnalysis.confidence || 0}%</span>
+              </div>
+              <div>
+                <span className="text-gray-600 block mb-2">Prediction:</span>
+                <p className="text-sm text-gray-700">{aiAnalysis.prediction}</p>
+              </div>
+              <div>
+                <span className="text-gray-600 block mb-2">Recommendation:</span>
+                <p className="text-sm text-gray-700">{aiAnalysis.recommendation}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600">
+                {priceHistory.length < 2 
+                  ? 'Need more price data for analysis' 
+                  : 'Click "Analyze" to get AI insights'
+                }
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center">
+              <DollarSign className="w-6 h-6 mr-2 text-green-600" />
+              Buying Insights
+            </h2>
+            <button
+              onClick={handleGetInsights}
+              className="btn btn-secondary text-sm"
+            >
+              <Brain className="w-4 h-4 mr-1" />
+              Get Insights
+            </button>
+          </div>
+
+          {insights ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">Deal Score:</span>
+                <span className="font-semibold text-green-600">{insights.dealScore}/100</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600">Good Deal:</span>
+                <span className={`font-semibold ${insights.isGoodDeal ? 'text-green-600' : 'text-red-600'}`}>
+                  {insights.isGoodDeal ? 'Yes' : 'No'}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-600 block mb-2">Strategy:</span>
+                <p className="text-sm text-gray-700">{insights.strategy}</p>
+              </div>
+              <div>
+                <span className="text-gray-600 block mb-2">Insights:</span>
+                <p className="text-sm text-gray-700">{insights.insights}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <DollarSign className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600">Click "Get Insights" for AI recommendations</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Price History Chart */}
+      {chartData.length > 0 && (
+        <div className="card">
+          <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+            <BarChart3 className="w-6 h-6 mr-2 text-blue-600" />
+            Price History (Last 3 Months)
+          </h2>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip 
+                  formatter={(value) => [`₹${value.toLocaleString()}`, 'Price']}
+                  labelFormatter={(label) => `Date: ${label}`}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="price" 
+                  stroke="#10b981" 
+                  strokeWidth={2}
+                  dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Price History Table */}
+      {priceHistory.length > 0 && (
+        <div className="card">
+          <h2 className="text-xl font-bold text-gray-900 mb-6">Recent Price Changes</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-3 px-4">Date</th>
+                  <th className="text-left py-3 px-4">Price</th>
+                  <th className="text-left py-3 px-4">Source</th>
+                  <th className="text-left py-3 px-4">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {priceHistory.slice(-10).reverse().map((entry, index) => (
+                  <tr key={index} className="border-b">
+                    <td className="py-3 px-4">
+                      {new Date(entry.timestamp).toLocaleDateString('en-IN', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </td>
+                    <td className="py-3 px-4 font-semibold text-green-600">
+                      ₹{entry.price.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 capitalize">{entry.source}</td>
+                    <td className="py-3 px-4">
+                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                        entry.availability === 'in_stock' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {entry.availability === 'in_stock' ? (
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                        ) : (
+                          <AlertTriangle className="w-3 h-3 mr-1" />
+                        )}
+                        {entry.availability.replace('_', ' ')}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default ProductDetail
