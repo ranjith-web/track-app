@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "AI-powered price tracking for Amazon, Flipkart, and Myntra",
   "main": "server/index.js",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd server && npm run dev",
@@ -11,7 +16,12 @@
     "start": "cd server && npm start",
     "install-all": "npm install && cd server && npm install && cd ../client && npm install"
   },
-  "keywords": ["price-tracking", "ecommerce", "ai", "scraping"],
+  "keywords": [
+    "price-tracking",
+    "ecommerce",
+    "ai",
+    "scraping"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
