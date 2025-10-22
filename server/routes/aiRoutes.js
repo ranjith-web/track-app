@@ -113,7 +113,14 @@ router.get('/insights/:productId', async (req, res) => {
     }
 
     // Check if we need to scrape reviews (scrape every 7 days)
-    let reviewSummary = product.buyingInsights?.reviewSummary || null;
+    let reviewSummary = product.buyingInsights?.reviewSummary || {
+      averageRating: 0,
+      totalGenuineReviews: 0,
+      sentiment: 'neutral',
+      pros: [],
+      cons: [],
+      fakeReviewPercentage: 0
+    };
     const shouldScrapeReviews = !product.reviews?.lastScraped || 
                                 (Date.now() - product.reviews.lastScraped) > (7 * 24 * 60 * 60 * 1000);
 
@@ -134,16 +141,18 @@ router.get('/insights/:productId', async (req, res) => {
             
             // Generate insights from genuine reviews
             const reviewInsights = await reviewAnalysisService.generateReviewInsights(filtered.genuine);
+            console.log('🔍 Review insights received:', JSON.stringify(reviewInsights, null, 2));
             
-            // Save review summary
+            // Save review summary with validation
             reviewSummary = {
-              averageRating: reviewInsights.averageRating,
-              totalGenuineReviews: filtered.stats.genuine,
-              sentiment: reviewInsights.sentiment,
-              pros: reviewInsights.pros,
-              cons: reviewInsights.cons,
-              fakeReviewPercentage: 100 - filtered.stats.genuinePercentage
+              averageRating: reviewInsights.averageRating || 0,
+              totalGenuineReviews: filtered.stats.genuine || 0,
+              sentiment: reviewInsights.sentiment || 'neutral',
+              pros: reviewInsights.pros || [],
+              cons: reviewInsights.cons || [],
+              fakeReviewPercentage: 100 - (filtered.stats.genuinePercentage || 0)
             };
+            console.log('📝 Final reviewSummary:', JSON.stringify(reviewSummary, null, 2));
             
             // Update product reviews stats
             product.reviews = {
@@ -172,9 +181,25 @@ router.get('/insights/:productId', async (req, res) => {
 
     // Generate fresh insights (now includes review data)
     console.log('🔄 Generating fresh buying insights...');
+    console.log('📊 Product data being sent to AI:', JSON.stringify(productData, null, 2));
     const insights = await aiService.getPriceInsights(productData);
+    console.log('🤖 AI insights received:', JSON.stringify(insights, null, 2));
+
+    // Ensure reviewSummary is always properly defined before saving
+    if (!reviewSummary || typeof reviewSummary !== 'object') {
+      console.log('⚠️  reviewSummary is invalid, using default values');
+      reviewSummary = {
+        averageRating: 0,
+        totalGenuineReviews: 0,
+        sentiment: 'neutral',
+        pros: [],
+        cons: [],
+        fakeReviewPercentage: 0
+      };
+    }
 
     // Save complete insights to database
+    console.log('💾 Saving to database - reviewSummary:', JSON.stringify(reviewSummary, null, 2));
     product.buyingInsights = {
       dealScore: insights.dealScore,
       isGoodDeal: insights.isGoodDeal,
@@ -187,6 +212,7 @@ router.get('/insights/:productId', async (req, res) => {
       reviewSummary: reviewSummary
     };
     
+    console.log('💾 Final buyingInsights before save:', JSON.stringify(product.buyingInsights, null, 2));
     await product.save();
     console.log('✅ Buying insights saved to database');
 

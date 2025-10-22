@@ -129,6 +129,18 @@ class AIService {
           insights: 'AI service not available'
         };
       }
+
+      // Check for insufficient price history
+      if (!productData.priceHistory || productData.priceHistory.length < 2) {
+        return {
+          dealScore: 50,
+          isGoodDeal: false,
+          priceComparison: 'Insufficient price history for analysis',
+          seasonalTrend: 'No trend data available',
+          strategy: 'Wait for more price data before making purchase decision',
+          insights: 'Need at least 2 price points for meaningful analysis. Price tracking runs 3 times daily to build historical data.'
+        };
+      }
       
       // Include review data in prompt if available
       let reviewSection = '';
@@ -180,7 +192,17 @@ class AIService {
         // Try to extract JSON from the response
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
+          const parsed = JSON.parse(jsonMatch[0]);
+          
+          // Validate and fix data types to prevent validation errors
+          return {
+            dealScore: typeof parsed.dealScore === 'number' ? parsed.dealScore : 50,
+            isGoodDeal: typeof parsed.isGoodDeal === 'boolean' ? parsed.isGoodDeal : (parsed.isGoodDeal === 'true' || parsed.isGoodDeal === true),
+            priceComparison: typeof parsed.priceComparison === 'string' ? parsed.priceComparison : 'Unable to compare prices',
+            seasonalTrend: typeof parsed.seasonalTrend === 'string' ? parsed.seasonalTrend : 'No trend data available',
+            strategy: typeof parsed.strategy === 'string' ? parsed.strategy : 'Monitor price before buying',
+            insights: typeof parsed.insights === 'string' ? parsed.insights : text
+          };
         } else {
           throw new Error('No JSON found in response');
         }
