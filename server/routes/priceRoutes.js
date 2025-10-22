@@ -37,6 +37,8 @@ router.post('/track', async (req, res) => {
     
     const productInfo = await Promise.race([scrapingPromise, timeoutPromise]);
     
+    console.log('🔍 Product info from scraping:', JSON.stringify(productInfo, null, 2));
+    
     if (!productInfo.price) {
       return res.status(400).json({ error: 'Could not extract price information' });
     }

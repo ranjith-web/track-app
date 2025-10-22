@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 class ReviewAnalysisService {
   constructor() {
-    this.apiKey = process.env.GEMINI_API_KEY || 'AIzaSyAV5DQj5ctKip3K4oGPKqfLWtGIXd6xN9g';
+    this.apiKey = process.env.GEMINI_API_KEY;
     this.genAI = null;
     this.model = null;
     

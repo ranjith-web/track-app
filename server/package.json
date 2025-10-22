@@ -1,26 +1,35 @@
 {
-  "name": "price-tracker-server",
+  "name": "track-app-server",
   "version": "1.0.0",
-  "description": "Backend server for price tracking",
+  "description": "Price tracking server with AI analysis",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "test": "jest"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
-    "axios": "^1.6.0",
+    "@google/generative-ai": "^0.2.1",
+    "axios": "^1.5.0",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "express-rate-limit": "^7.1.5",
-    "helmet": "^7.1.0",
-    "mongoose": "^8.0.0",
-    "node-cron": "^3.0.3",
-    "playwright": "^1.56.1"
+    "ioredis": "^5.8.2",
+    "mongoose": "^7.5.0",
+    "node-cron": "^3.0.2",
+    "playwright": "^1.38.0"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
     "nodemon": "^3.0.1"
-  }
+  },
+  "keywords": [
+    "price-tracking",
+    "ai-analysis",
+    "web-scraping",
+    "e-commerce"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
 }

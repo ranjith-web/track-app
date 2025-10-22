@@ -41,7 +41,9 @@ const priceRoutes = require('./routes/priceRoutes');
 const productRoutes = require('./routes/productRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const trackerRoutes = require('./routes/trackerRoutes');
+const cacheRoutes = require('./routes/cacheRoutes');
 const priceTrackerService = require('./services/priceTrackerService');
+const redisService = require('./services/redisService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -89,11 +91,15 @@ app.use(express.urlencoded({ extended: true }));
 // Connect to MongoDB
 connectDB();
 
+// Initialize Redis
+redisService.connect();
+
 // Routes
 app.use('/api/prices', priceRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/tracker', trackerRoutes);
+app.use('/api/cache', cacheRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -120,4 +126,18 @@ app.listen(PORT, () => {
   
   // Start automated price tracking
   priceTrackerService.startTracking();
+  
+  // Start cache cleanup interval (every 10 minutes)
+  setInterval(() => {
+    const requestQueue = require('./services/requestQueue');
+    requestQueue.cleanupCache();
+  }, 10 * 60 * 1000);
+  console.log('🧹 Cache cleanup scheduled');
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutting down gracefully...');
+  await redisService.disconnect();
+  process.exit(0);
 });

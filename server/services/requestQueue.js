@@ -1,12 +1,13 @@
 const EventEmitter = require('events');
+const redisService = require('./redisService');
 
 class RequestQueue extends EventEmitter {
   constructor() {
     super();
     this.queues = {}; // Separate queue per domain
     this.processing = {}; // Track which domains are being processed
-    this.cache = {}; // Cache recent results
-    this.cacheExpiry = 3600000; // 1 hour in milliseconds
+    this.cache = {}; // Fallback cache (in-memory)
+    this.cacheExpiry = 3600; // 1 hour in seconds (for Redis)
     this.minDelay = 10000; // 10 seconds between requests to same domain
   }
 
@@ -20,14 +21,13 @@ class RequestQueue extends EventEmitter {
   async enqueue(domain, operation, options = {}) {
     const { cacheKey, cacheDuration = this.cacheExpiry } = options;
 
-    // Check cache first
-    if (cacheKey && this.isCached(cacheKey)) {
-      console.log(`✅ Cache hit for ${cacheKey}`);
-      return {
-        ...this.cache[cacheKey].data,
-        fromCache: true,
-        cachedAt: this.cache[cacheKey].timestamp
-      };
+    // Check Redis cache first
+    if (cacheKey) {
+      const cached = await redisService.get(cacheKey);
+      if (cached) {
+        console.log(`✅ Redis cache hit for ${cacheKey}`);
+        return cached;
+      }
     }
 
     // Initialize queue for domain if doesn't exist
@@ -80,7 +80,7 @@ class RequestQueue extends EventEmitter {
 
         // Cache the result if cacheKey provided
         if (request.cacheKey) {
-          this.cacheResult(request.cacheKey, result, request.cacheDuration);
+          await this.cacheResult(request.cacheKey, result, request.cacheDuration);
         }
 
         // Resolve the promise
@@ -108,52 +108,85 @@ class RequestQueue extends EventEmitter {
   }
 
   /**
-   * Cache a result
+   * Cache a result (Redis + fallback)
    */
-  cacheResult(key, data, duration = this.cacheExpiry) {
-    this.cache[key] = {
-      data,
-      timestamp: Date.now(),
-      expiry: Date.now() + duration
-    };
-    console.log(`💾 Cached result for ${key} (expires in ${duration / 1000}s)`);
-  }
-
-  /**
-   * Check if cached data is still valid
-   */
-  isCached(key) {
-    if (!this.cache[key]) return false;
-    
-    const isExpired = Date.now() > this.cache[key].expiry;
-    if (isExpired) {
-      delete this.cache[key];
-      return false;
+  async cacheResult(key, data, duration = this.cacheExpiry) {
+    try {
+      // Try Redis first
+      await redisService.set(key, data, duration);
+    } catch (error) {
+      // Fallback to memory cache
+      this.cache[key] = {
+        data,
+        timestamp: Date.now(),
+        expiry: Date.now() + (duration * 1000)
+      };
+      console.log(`💾 Memory: Cached result for ${key} (expires in ${duration}s)`);
     }
-    
-    return true;
   }
 
   /**
-   * Get cached data
+   * Check if cached data is still valid (Redis + fallback)
    */
-  getCached(key) {
-    if (this.isCached(key)) {
-      return this.cache[key].data;
+  async isCached(key) {
+    try {
+      return await redisService.exists(key);
+    } catch (error) {
+      // Fallback to memory cache
+      if (!this.cache[key]) return false;
+      
+      const isExpired = Date.now() > this.cache[key].expiry;
+      if (isExpired) {
+        delete this.cache[key];
+        return false;
+      }
+      
+      return true;
     }
-    return null;
   }
 
   /**
-   * Clear cache for a specific key or all
+   * Get cached data (Redis + fallback)
    */
-  clearCache(key = null) {
-    if (key) {
-      delete this.cache[key];
-      console.log(`🗑️  Cleared cache for ${key}`);
-    } else {
-      this.cache = {};
-      console.log(`🗑️  Cleared all cache`);
+  async getCached(key) {
+    try {
+      return await redisService.get(key);
+    } catch (error) {
+      // Fallback to memory cache
+      if (this.cache[key] && Date.now() < this.cache[key].expiry) {
+        return {
+          ...this.cache[key].data,
+          fromCache: true,
+          cachedAt: this.cache[key].timestamp,
+          source: 'memory'
+        };
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Clear cache for a specific key or all (Redis + fallback)
+   */
+  async clearCache(key = null) {
+    try {
+      if (key) {
+        await redisService.delete(key);
+        delete this.cache[key]; // Also clear memory fallback
+        console.log(`🗑️  Cleared cache for ${key}`);
+      } else {
+        await redisService.clear();
+        this.cache = {};
+        console.log(`🗑️  Cleared all cache`);
+      }
+    } catch (error) {
+      // Fallback to memory only
+      if (key) {
+        delete this.cache[key];
+      } else {
+        this.cache = {};
+      }
+      console.log(`🗑️  Cleared memory cache for ${key || 'all'}`);
     }
   }
 
@@ -192,19 +225,8 @@ class RequestQueue extends EventEmitter {
    * Clear expired cache entries (cleanup)
    */
   cleanupCache() {
-    const now = Date.now();
-    let cleaned = 0;
-
-    Object.keys(this.cache).forEach(key => {
-      if (now > this.cache[key].expiry) {
-        delete this.cache[key];
-        cleaned++;
-      }
-    });
-
-    if (cleaned > 0) {
-      console.log(`🧹 Cleaned ${cleaned} expired cache entries`);
-    }
+    // Redis handles TTL automatically, only clean memory fallback
+    redisService.cleanup();
   }
 }
 

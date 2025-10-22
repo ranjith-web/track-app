@@ -8,14 +8,14 @@ class AIService {
     
     if (this.apiKey) {
       this.genAI = new GoogleGenerativeAI(this.apiKey);
-      this.model = this.genAI.getGenerativeModel({ 
-        model: "gemini-2.0-flash-exp",
-        generationConfig: {
-          temperature: 0, // Make outputs deterministic and consistent
-          topK: 1,
-          topP: 1,
-        }
-      });
+    this.model = this.genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      generationConfig: {
+        temperature: 0, // Make outputs deterministic and consistent
+        topK: 1,
+        topP: 1,
+      }
+    });
     } else {
       console.warn('GEMINI_API_KEY not found. AI features will be disabled.');
     }

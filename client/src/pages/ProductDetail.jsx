@@ -46,12 +46,16 @@ const ProductDetail = () => {
       // Automatically load AI analysis and insights
       const priceHistory = historyResponse.product?.priceHistory || []
       
-      // Load AI analysis if we have enough price history
+      // Load AI analysis if we have enough price history OR if it's a new product
       if (priceHistory.length >= 2) {
         handleAnalyzePrice(true) // Pass true to indicate auto-load
       } else if (productResponse.product?.aiAnalysis) {
         // Use existing analysis if available
         setAiAnalysis(productResponse.product.aiAnalysis)
+      } else {
+        // For new products with only 1 price point, still try to load AI analysis
+        // This will show "insufficient data" but allows the user to see the attempt
+        handleAnalyzePrice(true)
       }
       
       // Load buying insights automatically
@@ -121,9 +125,24 @@ const ProductDetail = () => {
       }
     } catch (error) {
       console.error('Error analyzing price:', error)
-      // Only show error toast if manually triggered
-      if (!isAutoLoad) {
-        toast.error('Failed to analyze price trend')
+      
+      // Handle insufficient data case gracefully
+      if (error.response?.data?.error?.includes('Insufficient price history')) {
+        // Set a placeholder analysis for insufficient data
+        setAiAnalysis({
+          trend: 'insufficient_data',
+          confidence: 0,
+          prediction: 'Need more price data for trend analysis',
+          recommendation: 'Add more products or wait for price updates',
+          stability: 'unknown',
+          analysis: 'Insufficient price history for analysis. Price tracking runs 3 times daily to build historical data.',
+          lastAnalyzed: new Date().toISOString()
+        })
+      } else {
+        // Only show error toast if manually triggered
+        if (!isAutoLoad) {
+          toast.error('Failed to analyze price trend')
+        }
       }
     } finally {
       setAnalyzing(false)
@@ -353,16 +372,29 @@ const ProductDetail = () => {
             </div>
           ) : aiAnalysis ? (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-600">Trend:</span>
-                <span className={`font-semibold ${getTrendColor(aiAnalysis.trend)}`}>
-                  {getTrendIcon(aiAnalysis.trend)} {aiAnalysis.trend?.toUpperCase()}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-600">Confidence:</span>
-                <span className="font-semibold">{aiAnalysis.confidence || 0}%</span>
-              </div>
+              {aiAnalysis.trend !== 'insufficient_data' ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600">Trend:</span>
+                    <span className={`font-semibold ${getTrendColor(aiAnalysis.trend)}`}>
+                      {getTrendIcon(aiAnalysis.trend)} {aiAnalysis.trend?.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600">Confidence:</span>
+                    <span className="font-semibold">{aiAnalysis.confidence || 0}%</span>
+                  </div>
+                </>
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <div className="text-yellow-600 mr-2">⚠️</div>
+                    <div className="text-sm text-yellow-800">
+                      <strong>Insufficient Data:</strong> Need more price points for trend analysis
+                    </div>
+                  </div>
+                </div>
+              )}
               <div>
                 <span className="text-gray-600 block mb-2">Prediction:</span>
                 <p className="text-sm text-gray-700">{aiAnalysis.prediction}</p>
@@ -377,10 +409,15 @@ const ProductDetail = () => {
               <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-600">
                 {priceHistory.length < 2 
-                  ? 'Need more price data for analysis' 
+                  ? 'Need more price data for trend analysis. Add more products or wait for price updates.' 
                   : 'Loading AI insights...'
                 }
               </p>
+              {priceHistory.length < 2 && (
+                <div className="mt-4 text-sm text-blue-600">
+                  💡 Price tracking runs 3 times daily to build historical data
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -562,56 +599,6 @@ const ProductDetail = () => {
         </div>
       )}
 
-      {/* Price History Table */}
-      {priceHistory.length > 0 && (
-        <div className="card">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">Recent Price Changes</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-4">Date</th>
-                  <th className="text-left py-3 px-4">Price</th>
-                  <th className="text-left py-3 px-4">Source</th>
-                  <th className="text-left py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {priceHistory.slice(-10).reverse().map((entry, index) => (
-                  <tr key={index} className="border-b">
-                    <td className="py-3 px-4">
-                      {new Date(entry.timestamp).toLocaleDateString('en-IN', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-green-600">
-                      ₹{entry.price.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4 capitalize">{entry.source}</td>
-                    <td className="py-3 px-4">
-                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                        entry.availability === 'in_stock' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {entry.availability === 'in_stock' ? (
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                        ) : (
-                          <AlertTriangle className="w-3 h-3 mr-1" />
-                        )}
-                        {entry.availability.replace('_', ' ')}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

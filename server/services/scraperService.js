@@ -139,48 +139,237 @@ class ScraperService {
     return await this.withRetry(async () => {
       const browser = await this.initBrowser();
       const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         viewport: { width: 1366, height: 768 }
       });
       const page = await context.newPage();
       
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        console.log(`🔍 Scraping Flipkart: ${url}`);
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
         
-        // Wait for price elements to load
-        await page.waitForSelector('._30jeq3, [class*="price"]', { timeout: 10000 }).catch(() => {});
+        // Wait for page to load completely and handle potential popups
+        await page.waitForTimeout(5000);
+        
+        // Try to close any popups or modals
+        try {
+          await page.click('button[class*="close"], ._2KpZ6l._2doB4z, [data-testid="close"]', { timeout: 2000 });
+        } catch (e) {
+          // Ignore if no close button found
+        }
         
         const productData = await page.evaluate(() => {
-          const title = document.querySelector('.B_NuCI')?.textContent?.trim() ||
-                       document.querySelector('h1')?.textContent?.trim();
+          console.log('🔍 Starting Flipkart evaluation...');
           
-          const priceElement = document.querySelector('._30jeq3._16Jk6d') ||
-                             document.querySelector('._30jeq3') ||
-                             document.querySelector('[class*="price"]');
+          // Try multiple selectors for title
+          const titleSelectors = [
+            '.B_NuCI',
+            'h1[class*="title"]',
+            'h1',
+            '[data-testid="product-title"]',
+            '.product-title'
+          ];
           
-          const price = priceElement?.textContent?.replace(/[^\d.]/g, '') || null;
+          let title = null;
+          for (const selector of titleSelectors) {
+            const element = document.querySelector(selector);
+            if (element?.textContent?.trim()) {
+              title = element.textContent.trim();
+              console.log(`✅ Found title with selector: ${selector}`);
+              break;
+            }
+          }
           
-          const image = document.querySelector('._396cs4._2amPT._3qGm1')?.src ||
-                       document.querySelector('img[class*="image"]')?.src;
+          // Try multiple selectors for price
+          const priceSelectors = [
+            '.Nx9bqj',  // This is the working selector!
+            '._30jeq3._16Jk6d',
+            '._30jeq3',
+            '[class*="price"]',
+            '[data-testid="price"]',
+            '.price',
+            'span[class*="price"]',
+            'div[class*="price"]',
+            'div[class*="Nx9bqj"]',
+            'div[class*="_25b18c"]',
+            'span[class*="Nx9bqj"]',
+            'span[class*="_25b18c"]'
+          ];
           
-          const availability = document.querySelector('._2JC05C')?.textContent?.trim() ||
-                             document.querySelector('[class*="stock"]')?.textContent?.trim();
+          let price = null;
+          let priceElement = null;
+          for (const selector of priceSelectors) {
+            priceElement = document.querySelector(selector);
+            if (priceElement?.textContent) {
+              const priceText = priceElement.textContent.replace(/[^\d.]/g, '');
+              if (priceText && !isNaN(parseFloat(priceText))) {
+                price = parseFloat(priceText);
+                console.log(`✅ Found price with selector: ${selector}, value: ${price}`);
+                break;
+              }
+            }
+          }
           
-          const discountElement = document.querySelector('._3Ay6Sb span');
-          const discount = discountElement?.textContent?.replace(/[^\d]/g, '') || 0;
+          // If no price found with selectors, try to find price in text content
+          if (!price) {
+            console.log('🔍 Trying to find price in text content...');
+            const allText = document.body.textContent || '';
+            const pricePatterns = [
+              /₹[\s]*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+              /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)[\s]*₹/g,
+              /price[\s]*:?[\s]*₹?[\s]*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/gi,
+              /₹[\s]*(\d{4,})/g  // For prices above 1000
+            ];
+            
+            for (const pattern of pricePatterns) {
+              const matches = allText.match(pattern);
+              if (matches) {
+                // Sort matches by price value and pick the highest reasonable price
+                const validPrices = matches
+                  .map(match => {
+                    const priceText = match.replace(/[^\d.]/g, '');
+                    const priceValue = parseFloat(priceText);
+                    return { match, priceValue };
+                  })
+                  .filter(item => item.priceValue && item.priceValue > 1000) // Reasonable price range for phones
+                  .sort((a, b) => b.priceValue - a.priceValue); // Sort by highest price
+                
+                if (validPrices.length > 0) {
+                  price = validPrices[0].priceValue;
+                  console.log(`✅ Found price in text: ${validPrices[0].match} -> ${price}`);
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Try multiple selectors for image
+          const imageSelectors = [
+            '._396cs4._2amPT._3qGm1',
+            'img[class*="image"]',
+            'img[alt*="product"]',
+            '.product-image img',
+            'img[data-testid="product-image"]',
+            // New selectors based on Flipkart structure
+            'img[class*="_396cs4"]',
+            'img[class*="q6DCl0"]',
+            'img[alt*="iPhone"]',
+            'img[alt*="Apple"]',
+            'img[src*="rukmini1.flixcart.com"]'
+          ];
+          
+          let image = null;
+          for (const selector of imageSelectors) {
+            const imgElement = document.querySelector(selector);
+            if (imgElement?.src) {
+              image = imgElement.src;
+              console.log(`✅ Found image with selector: ${selector}`);
+              break;
+            }
+          }
+          
+          // If no image found with selectors, try to get from JSON-LD structured data
+          if (!image) {
+            console.log('🔍 Trying to find image in JSON-LD structured data...');
+            const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+            for (const script of jsonLdScripts) {
+              try {
+                const data = JSON.parse(script.textContent);
+                if (data.image) {
+                  image = data.image;
+                  console.log(`✅ Found image in JSON-LD: ${image}`);
+                  break;
+                }
+                // Handle array of structured data
+                if (Array.isArray(data)) {
+                  for (const item of data) {
+                    if (item.image) {
+                      image = item.image;
+                      console.log(`✅ Found image in JSON-LD array: ${image}`);
+                      break;
+                    }
+                  }
+                }
+              } catch (e) {
+                // Ignore invalid JSON
+              }
+            }
+          }
+          
+          // Try multiple selectors for availability
+          const availabilitySelectors = [
+            '._2JC05C',
+            '[class*="stock"]',
+            '[data-testid="availability"]',
+            '.availability',
+            'span[class*="stock"]'
+          ];
+          
+          let availability = 'in_stock';
+          for (const selector of availabilitySelectors) {
+            const element = document.querySelector(selector);
+            if (element?.textContent?.trim()) {
+              const text = element.textContent.trim().toLowerCase();
+              if (text.includes('out') || text.includes('unavailable')) {
+                availability = 'out_of_stock';
+              }
+              console.log(`✅ Found availability with selector: ${selector}, value: ${text}`);
+              break;
+            }
+          }
+          
+          // Try multiple selectors for discount
+          const discountSelectors = [
+            '._3Ay6Sb span',
+            '[class*="discount"]',
+            '.discount',
+            'span[class*="off"]'
+          ];
+          
+          let discount = 0;
+          for (const selector of discountSelectors) {
+            const element = document.querySelector(selector);
+            if (element?.textContent) {
+              const discountText = element.textContent.replace(/[^\d]/g, '');
+              if (discountText && !isNaN(parseInt(discountText))) {
+                discount = parseInt(discountText);
+                console.log(`✅ Found discount with selector: ${selector}, value: ${discount}`);
+                break;
+              }
+            }
+          }
+          
+          console.log('🔍 Flipkart evaluation result:', { title, price, image, availability, discount });
           
           return {
             title,
-            price: price ? parseFloat(price) : null,
+            price,
             image,
-            availability: availability?.toLowerCase().includes('stock') ? 'in_stock' : 'out_of_stock',
-            discount: parseInt(discount) || 0
+            availability,
+            discount
           };
         });
         
+        console.log('🔍 Flipkart scraping result:', productData);
+        
+        if (!productData.price) {
+          throw new Error('Could not extract price information from Flipkart');
+        }
+        
+        // Log image extraction details
+        if (productData.image) {
+          console.log('✅ Image extracted successfully:', productData.image);
+        } else {
+          console.log('⚠️ No image found during scraping');
+        }
+        
         await context.close();
-        return productData;
+        return {
+          ...productData,
+          source: 'flipkart'
+        };
       } catch (error) {
+        console.error('❌ Flipkart scraping error:', error.message);
         await context.close().catch(() => {});
         throw error;
       }
@@ -481,6 +670,7 @@ class ScraperService {
       return [];
     }
   }
+
 }
 
 module.exports = new ScraperService();

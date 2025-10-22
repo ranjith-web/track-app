@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { TrendingUp, DollarSign, BarChart3, Brain, ArrowRight, Star } from 'lucide-react'
+import { TrendingUp, DollarSign, BarChart3, Brain, ArrowRight, Star, RefreshCw } from 'lucide-react'
 import { apiService } from '../services/apiService'
 import toast from 'react-hot-toast'
 
@@ -18,18 +18,33 @@ const Home = () => {
     fetchDashboardData()
   }, [])
 
+  // Refresh data when component becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchDashboardData()
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
+
   const fetchDashboardData = async () => {
     try {
       setLoading(true)
-      const [productsResponse] = await Promise.all([
-        apiService.getProducts({ limit: 5 })
-      ])
+      console.log('Fetching dashboard data...')
+      
+      const productsResponse = await apiService.getProducts({ limit: 10 })
+      console.log('Products response:', productsResponse)
 
       setRecentProducts(productsResponse.products || [])
       
       // Calculate stats from products
       const totalClicks = productsResponse.products?.reduce((sum, product) => sum + (product.clickCount || 0), 0) || 0
-      const totalProducts = productsResponse.products?.length || 0
+      const totalProducts = productsResponse.pagination?.total || productsResponse.products?.length || 0
+      
+      console.log('Calculated stats:', { totalProducts, totalClicks })
       
       setStats({
         totalProducts,
@@ -101,25 +116,45 @@ const Home = () => {
           >
             View Products
           </Link>
+          <button
+            onClick={fetchDashboardData}
+            disabled={loading}
+            className="btn btn-outline text-lg px-8 py-3"
+          >
+            {loading ? (
+              <div className="loading w-5 h-5 mr-2"></div>
+            ) : (
+              <RefreshCw className="w-5 h-5 mr-2" />
+            )}
+            Refresh Data
+          </button>
         </div>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="card text-center">
-          <div className="text-3xl font-bold text-blue-600 mb-2">{stats.totalProducts}</div>
+          <div className="text-3xl font-bold text-blue-600 mb-2">
+            {loading ? '...' : stats.totalProducts}
+          </div>
           <div className="text-gray-600">Products Tracked</div>
         </div>
         <div className="card text-center">
-          <div className="text-3xl font-bold text-green-600 mb-2">{stats.totalClicks}</div>
+          <div className="text-3xl font-bold text-green-600 mb-2">
+            {loading ? '...' : stats.totalClicks}
+          </div>
           <div className="text-gray-600">Total Clicks</div>
         </div>
         <div className="card text-center">
-          <div className="text-3xl font-bold text-purple-600 mb-2">{stats.averageSavings}%</div>
+          <div className="text-3xl font-bold text-purple-600 mb-2">
+            {loading ? '...' : `${stats.averageSavings}%`}
+          </div>
           <div className="text-gray-600">Avg. Savings</div>
         </div>
         <div className="card text-center">
-          <div className="text-3xl font-bold text-orange-600 mb-2">{stats.activeTrackers}</div>
+          <div className="text-3xl font-bold text-orange-600 mb-2">
+            {loading ? '...' : stats.activeTrackers}
+          </div>
           <div className="text-gray-600">Active Trackers</div>
         </div>
       </div>
