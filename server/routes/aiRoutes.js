@@ -87,23 +87,29 @@ router.get('/insights/:productId', async (req, res) => {
     }
 
     // Get current lowest price
-    const currentPrice = Object.values(product.currentPrice || {})
-      .filter(p => p && p > 0)
-      .reduce((min, p) => Math.min(min, p), Infinity);
+    const validPrices = Object.values(product.currentPrice || {})
+      .filter(p => p && p > 0);
+    
+    const currentPrice = validPrices.length > 0 
+      ? Math.min(...validPrices) 
+      : 0;
+    
+    if (currentPrice === 0) {
+      return res.status(400).json({ error: 'No valid price data available for this product' });
+    }
 
     // Check if we have cached insights and price hasn't changed significantly
     if (product.buyingInsights && 
         product.buyingInsights.lastAnalyzed &&
         product.buyingInsights.priceSnapshot) {
       
-      const hoursSinceAnalysis = (Date.now() - product.buyingInsights.lastAnalyzed) / (1000 * 60 * 60);
+      const hoursSinceAnalysis = (Date.now() - new Date(product.buyingInsights.lastAnalyzed)) / (1000 * 60 * 60);
       const priceChangePercent = Math.abs((currentPrice - product.buyingInsights.priceSnapshot) / product.buyingInsights.priceSnapshot * 100);
       
       // Return cached insights if:
       // - Analyzed within last 24 hours AND
       // - Price changed less than 5%
       if (hoursSinceAnalysis < 24 && priceChangePercent < 5) {
-        console.log(`✅ Returning cached buying insights (${hoursSinceAnalysis.toFixed(1)}h old, ${priceChangePercent.toFixed(1)}% price change)`);
         return res.json({
           insights: product.buyingInsights,
           cached: true,
@@ -180,14 +186,10 @@ router.get('/insights/:productId', async (req, res) => {
     };
 
     // Generate fresh insights (now includes review data)
-    console.log('🔄 Generating fresh buying insights...');
-    console.log('📊 Product data being sent to AI:', JSON.stringify(productData, null, 2));
     const insights = await aiService.getPriceInsights(productData);
-    console.log('🤖 AI insights received:', JSON.stringify(insights, null, 2));
 
     // Ensure reviewSummary is always properly defined before saving
     if (!reviewSummary || typeof reviewSummary !== 'object') {
-      console.log('⚠️  reviewSummary is invalid, using default values');
       reviewSummary = {
         averageRating: 0,
         totalGenuineReviews: 0,
@@ -197,24 +199,28 @@ router.get('/insights/:productId', async (req, res) => {
         fakeReviewPercentage: 0
       };
     }
-
-    // Save complete insights to database
-    console.log('💾 Saving to database - reviewSummary:', JSON.stringify(reviewSummary, null, 2));
-    product.buyingInsights = {
-      dealScore: insights.dealScore,
-      isGoodDeal: insights.isGoodDeal,
-      priceComparison: insights.priceComparison,
-      seasonalTrend: insights.seasonalTrend,
-      strategy: insights.strategy,
-      insights: insights.insights,
-      lastAnalyzed: new Date(),
-      priceSnapshot: currentPrice,
-      reviewSummary: reviewSummary
+    
+    // Set buyingInsights fields individually to avoid Mongoose issues
+    product.buyingInsights.dealScore = insights.dealScore;
+    product.buyingInsights.isGoodDeal = insights.isGoodDeal;
+    product.buyingInsights.priceComparison = insights.priceComparison;
+    product.buyingInsights.seasonalTrend = insights.seasonalTrend;
+    product.buyingInsights.strategy = insights.strategy;
+    product.buyingInsights.insights = insights.insights;
+    product.buyingInsights.lastAnalyzed = new Date();
+    product.buyingInsights.priceSnapshot = currentPrice;
+    
+    // Set reviewSummary directly
+    product.buyingInsights.reviewSummary = {
+      averageRating: reviewSummary.averageRating,
+      totalGenuineReviews: reviewSummary.totalGenuineReviews,
+      sentiment: reviewSummary.sentiment,
+      pros: [...(reviewSummary.pros || [])],
+      cons: [...(reviewSummary.cons || [])],
+      fakeReviewPercentage: reviewSummary.fakeReviewPercentage
     };
     
-    console.log('💾 Final buyingInsights before save:', JSON.stringify(product.buyingInsights, null, 2));
     await product.save();
-    console.log('✅ Buying insights saved to database');
 
     res.json({
       insights: product.buyingInsights,

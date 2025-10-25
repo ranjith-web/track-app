@@ -12,7 +12,7 @@ import {
   CheckCircle,
   BarChart3
 } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine } from 'recharts'
 import { apiService } from '../services/apiService'
 import toast from 'react-hot-toast'
 
@@ -27,6 +27,7 @@ const ProductDetail = () => {
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisCached, setAnalysisCached] = useState(false)
   const [insightsCached, setInsightsCached] = useState(false)
+  const [timeRange, setTimeRange] = useState('max')
 
   useEffect(() => {
     fetchProductData()
@@ -185,12 +186,33 @@ const ProductDetail = () => {
       .map(([source, price]) => ({ source, price }))
   }
 
-  const formatPriceHistory = (history) => {
-    return history.map(entry => ({
+  const formatPriceHistory = (history, range = 'max') => {
+    if (!history || history.length === 0) return []
+    
+    const now = new Date()
+    let filteredHistory = history
+    
+    // Filter based on time range
+    if (range === '1m') {
+      const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+      filteredHistory = history.filter(entry => new Date(entry.timestamp) >= oneMonthAgo)
+    } else if (range === '3m') {
+      const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+      filteredHistory = history.filter(entry => new Date(entry.timestamp) >= threeMonthsAgo)
+    }
+    
+    return filteredHistory.map(entry => ({
       date: new Date(entry.timestamp).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
       price: entry.price,
-      source: entry.source
-    }))
+      source: entry.source,
+      fullDate: new Date(entry.timestamp).toLocaleDateString('en-IN', { 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      timestamp: new Date(entry.timestamp).getTime()
+    })).sort((a, b) => a.timestamp - b.timestamp)
   }
 
   const getTrendColor = (trend) => {
@@ -235,7 +257,15 @@ const ProductDetail = () => {
 
   const lowestPrice = getLowestPrice(product.currentPrice)
   const priceSources = getPriceSources(product.currentPrice)
-  const chartData = formatPriceHistory(priceHistory)
+  const chartData = formatPriceHistory(priceHistory, timeRange)
+  
+  // Debug logging
+  console.log('🔍 Debug Chart Data:', {
+    priceHistoryLength: priceHistory.length,
+    chartDataLength: chartData.length,
+    timeRange,
+    chartData: chartData
+  })
 
   return (
     <div className="space-y-6">
@@ -507,31 +537,121 @@ const ProductDetail = () => {
 
       {/* Price History Chart */}
       <div className="card">
-        <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
-          <BarChart3 className="w-6 h-6 mr-2 text-blue-600" />
-          Price History (Last 3 Months)
-        </h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-gray-900 flex items-center">
+            <BarChart3 className="w-6 h-6 mr-2 text-blue-600" />
+            Price History
+          </h2>
+          
+          {/* Time Range Selector */}
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setTimeRange('1m')}
+              className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                timeRange === '1m' 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              1 Month
+            </button>
+            <button
+              onClick={() => setTimeRange('3m')}
+              className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                timeRange === '3m' 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              3 Month
+            </button>
+            <button
+              onClick={() => setTimeRange('max')}
+              className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                timeRange === 'max' 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Max
+            </button>
+          </div>
+        </div>
         
         {chartData.length > 0 ? (
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip 
-                  formatter={(value) => [`₹${value.toLocaleString()}`, 'Price']}
-                  labelFormatter={(label) => `Date: ${label}`}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="price" 
-                  stroke="#10b981" 
-                  strokeWidth={2}
-                  dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+          <div>
+            {/* Debug info */}
+            <div className="mb-4 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
+              <strong>Debug:</strong> Chart data length: {chartData.length}, Time range: {timeRange}
+              <br />
+              <strong>Data:</strong> {JSON.stringify(chartData, null, 2)}
+            </div>
+            
+            {/* Show message if all prices are identical */}
+            {chartData.length > 1 && chartData.every(d => d.price === chartData[0].price) && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center">
+                  <div className="text-blue-600 mr-2">📊</div>
+                  <div className="text-sm text-blue-800">
+                    <strong>Stable Price:</strong> The price has remained constant at ₹{chartData[0].price.toLocaleString()} across all tracked periods.
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="h-96 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg">
+              {/* Test with simple data first */}
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart 
+                  data={[
+                    { date: '22 Oct', price: 154900 },
+                    { date: '22 Oct', price: 154900 }
+                  ]} 
+                  margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 12, fill: '#6b7280' }}
+                    axisLine={{ stroke: '#e5e7eb' }}
+                    tickLine={{ stroke: '#e5e7eb' }}
+                  />
+                  <YAxis 
+                    domain={[150000, 160000]}
+                    tick={{ fontSize: 12, fill: '#6b7280' }}
+                    axisLine={{ stroke: '#e5e7eb' }}
+                    tickLine={{ stroke: '#e5e7eb' }}
+                    tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}K`}
+                  />
+                  <Tooltip 
+                    formatter={(value) => [`₹${value.toLocaleString()}`, 'Price']}
+                    labelFormatter={(label) => `Date: ${label}`}
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="price"
+                    stroke="#ef4444"
+                    strokeWidth={3}
+                    dot={{ fill: '#ef4444', strokeWidth: 2, r: 6 }}
+                    activeDot={{ r: 8, stroke: '#ef4444', strokeWidth: 2, fill: 'white' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            
+            {/* Chart Stats */}
+            <div className="mt-4 flex justify-between text-sm text-gray-500">
+              <span>{chartData.length} data point{chartData.length !== 1 ? 's' : ''}</span>
+              <span>
+                Range: ₹{Math.min(...chartData.map(d => d.price)).toLocaleString()} - ₹{Math.max(...chartData.map(d => d.price)).toLocaleString()}
+              </span>
+            </div>
           </div>
         ) : (
           <div className="text-center py-12 bg-blue-50 rounded-lg">

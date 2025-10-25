@@ -47,12 +47,22 @@ const productSchema = new mongoose.Schema({
     lastAnalyzed: { type: Date },
     priceSnapshot: { type: Number }, // Price when insights were generated
     reviewSummary: {
-      averageRating: { type: Number },
-      totalGenuineReviews: { type: Number },
-      sentiment: { type: String },
-      pros: [{ type: String }],
-      cons: [{ type: String }],
-      fakeReviewPercentage: { type: Number }
+      type: {
+        averageRating: { type: Number, default: 0 },
+        totalGenuineReviews: { type: Number, default: 0 },
+        sentiment: { type: String, default: 'neutral' },
+        pros: [{ type: String }],
+        cons: [{ type: String }],
+        fakeReviewPercentage: { type: Number, default: 0 }
+      },
+      default: {
+        averageRating: 0,
+        totalGenuineReviews: 0,
+        sentiment: 'neutral',
+        pros: [],
+        cons: [],
+        fakeReviewPercentage: 0
+      }
     }
   },
   reviews: {
