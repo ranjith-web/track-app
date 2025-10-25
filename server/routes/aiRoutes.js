@@ -14,9 +14,9 @@ router.post('/analyze/:productId', async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    if (!product.priceHistory || product.priceHistory.length < 2) {
+    if (!product.priceHistory || product.priceHistory.length < 1) {
       return res.status(400).json({ 
-        error: 'Insufficient price history for analysis' 
+        error: 'No price history available for analysis' 
       });
     }
 

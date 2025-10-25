@@ -47,16 +47,12 @@ const ProductDetail = () => {
       // Automatically load AI analysis and insights
       const priceHistory = historyResponse.product?.priceHistory || []
       
-      // Load AI analysis if we have enough price history OR if it's a new product
-      if (priceHistory.length >= 2) {
+      // Load AI analysis for any product with price history
+      if (priceHistory.length >= 1) {
         handleAnalyzePrice(true) // Pass true to indicate auto-load
       } else if (productResponse.product?.aiAnalysis) {
         // Use existing analysis if available
         setAiAnalysis(productResponse.product.aiAnalysis)
-      } else {
-        // For new products with only 1 price point, still try to load AI analysis
-        // This will show "insufficient data" but allows the user to see the attempt
-        handleAnalyzePrice(true)
       }
       
       // Load buying insights automatically
@@ -375,7 +371,7 @@ const ProductDetail = () => {
             </div>
             <button
               onClick={() => handleAnalyzePrice(false)}
-              disabled={analyzing || priceHistory.length < 2}
+              disabled={analyzing || priceHistory.length < 1}
               className="btn btn-secondary text-sm"
               title="Refresh AI analysis"
             >

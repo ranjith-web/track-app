@@ -34,11 +34,24 @@ class AIService {
         };
       }
 
-      if (!priceHistory || priceHistory.length < 2) {
+      if (!priceHistory || priceHistory.length < 1) {
         return {
           trend: 'insufficient_data',
           confidence: 0,
-          prediction: 'Need more price data for accurate analysis'
+          prediction: 'No price data available for analysis'
+        };
+      }
+
+      // Handle single price point
+      if (priceHistory.length === 1) {
+        const singlePrice = priceHistory[0];
+        return {
+          trend: 'stable',
+          confidence: 30,
+          prediction: 'Price tracking started. More data points needed for trend analysis.',
+          recommendation: 'Check back in a few days for price trend insights',
+          stability: 'unknown',
+          analysis: `Initial price recorded: ₹${singlePrice.price.toLocaleString()} on ${new Date(singlePrice.timestamp).toLocaleDateString()}. Price tracking will continue to build historical data for better analysis.`
         };
       }
 
