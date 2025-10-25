@@ -259,13 +259,6 @@ const ProductDetail = () => {
   const priceSources = getPriceSources(product.currentPrice)
   const chartData = formatPriceHistory(priceHistory, timeRange)
   
-  // Debug logging
-  console.log('🔍 Debug Chart Data:', {
-    priceHistoryLength: priceHistory.length,
-    chartDataLength: chartData.length,
-    timeRange,
-    chartData: chartData
-  })
 
   return (
     <div className="space-y-6">
@@ -580,12 +573,6 @@ const ProductDetail = () => {
         
         {chartData.length > 0 ? (
           <div>
-            {/* Debug info */}
-            <div className="mb-4 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
-              <strong>Debug:</strong> Chart data length: {chartData.length}, Time range: {timeRange}
-              <br />
-              <strong>Data:</strong> {JSON.stringify(chartData, null, 2)}
-            </div>
             
             {/* Show message if all prices are identical */}
             {chartData.length > 1 && chartData.every(d => d.price === chartData[0].price) && (
@@ -598,50 +585,40 @@ const ProductDetail = () => {
                 </div>
               </div>
             )}
-            
-            <div className="h-96 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg">
-              {/* Test with simple data first */}
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart 
-                  data={[
-                    { date: '22 Oct', price: 154900 },
-                    { date: '22 Oct', price: 154900 }
-                  ]} 
-                  margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+            <div style={{ width: '100%', height: 300 }}>
+              <ResponsiveContainer>
+                <AreaChart
+                  data={chartData}
+                  margin={{
+                    top: 10,
+                    right: 30,
+                    left: 0,
+                    bottom: 0,
+                  }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
                     dataKey="date" 
-                    tick={{ fontSize: 12, fill: '#6b7280' }}
-                    axisLine={{ stroke: '#e5e7eb' }}
-                    tickLine={{ stroke: '#e5e7eb' }}
+                    tick={{ fontSize: 12 }}
+                    interval="preserveStartEnd"
                   />
                   <YAxis 
-                    domain={[150000, 160000]}
-                    tick={{ fontSize: 12, fill: '#6b7280' }}
-                    axisLine={{ stroke: '#e5e7eb' }}
-                    tickLine={{ stroke: '#e5e7eb' }}
+                    tick={{ fontSize: 12 }}
                     tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}K`}
                   />
                   <Tooltip 
                     formatter={(value) => [`₹${value.toLocaleString()}`, 'Price']}
                     labelFormatter={(label) => `Date: ${label}`}
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                    }}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="price"
-                    stroke="#ef4444"
-                    strokeWidth={3}
-                    dot={{ fill: '#ef4444', strokeWidth: 2, r: 6 }}
-                    activeDot={{ r: 8, stroke: '#ef4444', strokeWidth: 2, fill: 'white' }}
+                  <Area 
+                    type="monotone" 
+                    dataKey="price" 
+                    stroke="#ef4444" 
+                    fill="#ef4444" 
+                    fillOpacity={0.3}
+                    strokeWidth={2}
                   />
-                </LineChart>
+                </AreaChart>
               </ResponsiveContainer>
             </div>
             

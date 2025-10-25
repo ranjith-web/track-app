@@ -399,4 +399,83 @@ router.post('/test', async (req, res) => {
   }
 });
 
+// Generate sample price history data
+router.post('/generate-sample-data/:productId', async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.productId);
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Sample price history data similar to competitor's format
+    const samplePriceHistory = [
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-12T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-13T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-14T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-15T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-16T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-17T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-18T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-19T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-22T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-23T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-26T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-27T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-28T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-29T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-09-30T08:00:00Z') },
+      { price: 134900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-01T08:00:00Z') }, // Big drop
+      { price: 134900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-02T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-03T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-04T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-05T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-06T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-07T08:00:00Z') },
+      { price: 174900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-08T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-09T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-10T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-11T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-12T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-13T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-14T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-15T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-16T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-17T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-18T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-19T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-20T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-21T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-22T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-23T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-24T08:00:00Z') },
+      { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-25T08:00:00Z') }
+    ];
+
+    // Clear existing price history and add sample data
+    product.priceHistory = samplePriceHistory;
+    
+    // Update current price to the latest
+    product.currentPrice = {
+      amazon: samplePriceHistory[samplePriceHistory.length - 1].price
+    };
+    
+    // Save the product
+    await product.save();
+    
+    res.json({
+      success: true,
+      message: `Generated ${samplePriceHistory.length} price history entries`,
+      priceRange: {
+        min: Math.min(...samplePriceHistory.map(p => p.price)),
+        max: Math.max(...samplePriceHistory.map(p => p.price))
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error generating sample data:', error);
+    res.status(500).json({ error: 'Failed to generate sample data' });
+  }
+});
+
 module.exports = router;
