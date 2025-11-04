@@ -200,3 +200,36 @@ For support and questions:
 - [ ] Bulk product import
 - [ ] Price comparison across platforms
 - [ ] Historical data export
+
+
+# Server Environment Variables
+# This file contains server-specific environment variables
+
+# Database Configuration
+MONGODB_URI=mongodb://localhost:27017/trackapp
+
+# Redis Configuration
+REDIS_HOST=redis-12838.c279.us-central1-1.gce.redns.redis-cloud.com
+REDIS_PORT=12838
+REDIS_PASSWORD=upy9EKAtfRPACNlslItKXVETblt2j6w8
+REDIS_DB=0
+
+# Server Configuration
+PORT=5001
+NODE_ENV=development
+
+# AI Configuration
+GEMINI_API_KEY=AIzaSyAV5DQj5ctKip3K4oGPKqfLWtGIXd6xN9g
+
+# CORS Configuration
+FRONTEND_URL=http://localhost:5173
+
+# Cache Configuration
+CACHE_DEFAULT_TTL=3600          # 1 hour
+CACHE_SCRAPING_TTL=3600         # 1 hour
+CACHE_AI_ANALYSIS_TTL=86400     # 24 hours
+CACHE_REVIEWS_TTL=604800        # 7 days
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000     # 15 minutes
+RATE_LIMIT_MAX_REQUESTS=100     # 100 requests per window
