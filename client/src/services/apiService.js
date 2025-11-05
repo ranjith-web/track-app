@@ -44,6 +44,21 @@ export const apiService = {
     return response.data
   },
 
+  async searchProducts(query, limit = 10) {
+    const response = await api.get('/products/search', { params: { q: query, limit } })
+    return response.data
+  },
+
+  async getProductComparison(productId) {
+    const response = await api.get(`/products/compare/${productId}`)
+    return response.data
+  },
+
+  async addMarketplaceUrl(productId, url, platform) {
+    const response = await api.post(`/products/${productId}/url`, { url, platform })
+    return response.data
+  },
+
   async addProduct(productData) {
     const response = await api.post('/prices/track', productData)
     return response.data

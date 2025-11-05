@@ -8,7 +8,7 @@ class ScraperService {
     this.browser = null;
     this.maxRetries = 3;
     this.retryDelay = 2000;
-    
+
     // Start cache cleanup interval (every 10 minutes)
     setInterval(() => {
       requestQueue.cleanupCache();
@@ -24,7 +24,7 @@ class ScraperService {
           console.warn('Error closing previous browser:', error.message);
         }
       }
-      
+
       this.browser = await chromium.launch({
         headless: true,
         args: [
@@ -39,8 +39,7 @@ class ScraperService {
           '--disable-features=VizDisplayCompositor',
           '--disable-extensions',
           '--disable-plugins',
-          '--disable-images',
-          '--disable-javascript',
+          // Note: JavaScript is enabled for dynamic content (Flipkart, Myntra, etc.)
           '--disable-default-apps'
         ],
         timeout: 30000
@@ -66,15 +65,15 @@ class ScraperService {
         return await operation();
       } catch (error) {
         console.warn(`Attempt ${attempt} failed:`, error.message);
-        
+
         if (attempt === maxRetries) {
           throw error;
         }
-        
+
         // Close browser on connection errors and wait before retry
-        if (error.message.includes('socket hang up') || 
-            error.message.includes('ECONNRESET') ||
-            error.message.includes('WebSocket')) {
+        if (error.message.includes('socket hang up') ||
+          error.message.includes('ECONNRESET') ||
+          error.message.includes('WebSocket')) {
           await this.closeBrowser();
           await new Promise(resolve => setTimeout(resolve, this.retryDelay * attempt));
         }
@@ -90,33 +89,33 @@ class ScraperService {
         viewport: { width: 1366, height: 768 }
       });
       const page = await context.newPage();
-      
+
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        
+
         // Wait for price elements to load
-        await page.waitForSelector('.a-price-whole, .a-offscreen, #priceblock_dealprice, #priceblock_ourprice', { timeout: 10000 }).catch(() => {});
-        
+        await page.waitForSelector('.a-price-whole, .a-offscreen, #priceblock_dealprice, #priceblock_ourprice', { timeout: 10000 }).catch(() => { });
+
         const productData = await page.evaluate(() => {
-          const title = document.querySelector('#productTitle')?.textContent?.trim() || 
-                       document.querySelector('h1.a-size-large')?.textContent?.trim();
-          
-          const priceElement = document.querySelector('.a-price-whole') || 
-                             document.querySelector('.a-offscreen') ||
-                             document.querySelector('#priceblock_dealprice') ||
-                             document.querySelector('#priceblock_ourprice');
-          
+          const title = document.querySelector('#productTitle')?.textContent?.trim() ||
+            document.querySelector('h1.a-size-large')?.textContent?.trim();
+
+          const priceElement = document.querySelector('.a-price-whole') ||
+            document.querySelector('.a-offscreen') ||
+            document.querySelector('#priceblock_dealprice') ||
+            document.querySelector('#priceblock_ourprice');
+
           const price = priceElement?.textContent?.replace(/[^\d.]/g, '') || null;
-          
+
           const image = document.querySelector('#landingImage')?.src ||
-                       document.querySelector('.a-dynamic-image')?.src;
-          
+            document.querySelector('.a-dynamic-image')?.src;
+
           const availability = document.querySelector('#availability span')?.textContent?.trim() ||
-                             document.querySelector('#availability')?.textContent?.trim();
-          
+            document.querySelector('#availability')?.textContent?.trim();
+
           const discountElement = document.querySelector('.a-size-large.a-color-price.savingsPercentage');
           const discount = discountElement?.textContent?.replace(/[^\d]/g, '') || 0;
-          
+
           return {
             title,
             price: price ? parseFloat(price) : null,
@@ -125,11 +124,11 @@ class ScraperService {
             discount: parseInt(discount) || 0
           };
         });
-        
+
         await context.close();
         return productData;
       } catch (error) {
-        await context.close().catch(() => {});
+        await context.close().catch(() => { });
         throw error;
       }
     });
@@ -143,24 +142,24 @@ class ScraperService {
         viewport: { width: 1366, height: 768 }
       });
       const page = await context.newPage();
-      
+
       try {
         console.log(`🔍 Scraping Flipkart: ${url}`);
         await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-        
+
         // Wait for page to load completely and handle potential popups
         await page.waitForTimeout(5000);
-        
+
         // Try to close any popups or modals
         try {
           await page.click('button[class*="close"], ._2KpZ6l._2doB4z, [data-testid="close"]', { timeout: 2000 });
         } catch (e) {
           // Ignore if no close button found
         }
-        
+
         const productData = await page.evaluate(() => {
           console.log('🔍 Starting Flipkart evaluation...');
-          
+
           // Try multiple selectors for title
           const titleSelectors = [
             '.B_NuCI',
@@ -169,7 +168,7 @@ class ScraperService {
             '[data-testid="product-title"]',
             '.product-title'
           ];
-          
+
           let title = null;
           for (const selector of titleSelectors) {
             const element = document.querySelector(selector);
@@ -179,7 +178,7 @@ class ScraperService {
               break;
             }
           }
-          
+
           // Try multiple selectors for price
           const priceSelectors = [
             '.Nx9bqj',  // This is the working selector!
@@ -195,7 +194,7 @@ class ScraperService {
             'span[class*="Nx9bqj"]',
             'span[class*="_25b18c"]'
           ];
-          
+
           let price = null;
           let priceElement = null;
           for (const selector of priceSelectors) {
@@ -209,7 +208,7 @@ class ScraperService {
               }
             }
           }
-          
+
           // If no price found with selectors, try to find price in text content
           if (!price) {
             console.log('🔍 Trying to find price in text content...');
@@ -220,7 +219,7 @@ class ScraperService {
               /price[\s]*:?[\s]*₹?[\s]*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/gi,
               /₹[\s]*(\d{4,})/g  // For prices above 1000
             ];
-            
+
             for (const pattern of pricePatterns) {
               const matches = allText.match(pattern);
               if (matches) {
@@ -233,7 +232,7 @@ class ScraperService {
                   })
                   .filter(item => item.priceValue && item.priceValue > 1000) // Reasonable price range for phones
                   .sort((a, b) => b.priceValue - a.priceValue); // Sort by highest price
-                
+
                 if (validPrices.length > 0) {
                   price = validPrices[0].priceValue;
                   console.log(`✅ Found price in text: ${validPrices[0].match} -> ${price}`);
@@ -242,7 +241,7 @@ class ScraperService {
               }
             }
           }
-          
+
           // Try multiple selectors for image
           const imageSelectors = [
             '._396cs4._2amPT._3qGm1',
@@ -257,7 +256,7 @@ class ScraperService {
             'img[alt*="Apple"]',
             'img[src*="rukmini1.flixcart.com"]'
           ];
-          
+
           let image = null;
           for (const selector of imageSelectors) {
             const imgElement = document.querySelector(selector);
@@ -267,7 +266,7 @@ class ScraperService {
               break;
             }
           }
-          
+
           // If no image found with selectors, try to get from JSON-LD structured data
           if (!image) {
             console.log('🔍 Trying to find image in JSON-LD structured data...');
@@ -295,7 +294,7 @@ class ScraperService {
               }
             }
           }
-          
+
           // Try multiple selectors for availability
           const availabilitySelectors = [
             '._2JC05C',
@@ -304,7 +303,7 @@ class ScraperService {
             '.availability',
             'span[class*="stock"]'
           ];
-          
+
           let availability = 'in_stock';
           for (const selector of availabilitySelectors) {
             const element = document.querySelector(selector);
@@ -317,7 +316,7 @@ class ScraperService {
               break;
             }
           }
-          
+
           // Try multiple selectors for discount
           const discountSelectors = [
             '._3Ay6Sb span',
@@ -325,7 +324,7 @@ class ScraperService {
             '.discount',
             'span[class*="off"]'
           ];
-          
+
           let discount = 0;
           for (const selector of discountSelectors) {
             const element = document.querySelector(selector);
@@ -338,9 +337,9 @@ class ScraperService {
               }
             }
           }
-          
+
           console.log('🔍 Flipkart evaluation result:', { title, price, image, availability, discount });
-          
+
           return {
             title,
             price,
@@ -349,20 +348,20 @@ class ScraperService {
             discount
           };
         });
-        
+
         console.log('🔍 Flipkart scraping result:', productData);
-        
+
         if (!productData.price) {
           throw new Error('Could not extract price information from Flipkart');
         }
-        
+
         // Log image extraction details
         if (productData.image) {
           console.log('✅ Image extracted successfully:', productData.image);
         } else {
           console.log('⚠️ No image found during scraping');
         }
-        
+
         await context.close();
         return {
           ...productData,
@@ -370,7 +369,7 @@ class ScraperService {
         };
       } catch (error) {
         console.error('❌ Flipkart scraping error:', error.message);
-        await context.close().catch(() => {});
+        await context.close().catch(() => { });
         throw error;
       }
     });
@@ -384,31 +383,31 @@ class ScraperService {
         viewport: { width: 1366, height: 768 }
       });
       const page = await context.newPage();
-      
+
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        
+
         // Wait for price elements to load
-        await page.waitForSelector('.pdp-price, [class*="price"]', { timeout: 10000 }).catch(() => {});
-        
+        await page.waitForSelector('.pdp-price, [class*="price"]', { timeout: 10000 }).catch(() => { });
+
         const productData = await page.evaluate(() => {
           const title = document.querySelector('.pdp-product-name')?.textContent?.trim() ||
-                       document.querySelector('h1')?.textContent?.trim();
-          
+            document.querySelector('h1')?.textContent?.trim();
+
           const priceElement = document.querySelector('.pdp-price') ||
-                             document.querySelector('[class*="price"]');
-          
+            document.querySelector('[class*="price"]');
+
           const price = priceElement?.textContent?.replace(/[^\d.]/g, '') || null;
-          
+
           const image = document.querySelector('.image-grid-image')?.src ||
-                       document.querySelector('img[class*="image"]')?.src;
-          
+            document.querySelector('img[class*="image"]')?.src;
+
           const availability = document.querySelector('.size-buttons-size-button')?.textContent?.trim() ||
-                             document.querySelector('[class*="size"]')?.textContent?.trim();
-          
+            document.querySelector('[class*="size"]')?.textContent?.trim();
+
           const discountElement = document.querySelector('.pdp-discount');
           const discount = discountElement?.textContent?.replace(/[^\d]/g, '') || 0;
-          
+
           return {
             title,
             price: price ? parseFloat(price) : null,
@@ -417,11 +416,11 @@ class ScraperService {
             discount: parseInt(discount) || 0
           };
         });
-        
+
         await context.close();
         return productData;
       } catch (error) {
-        await context.close().catch(() => {});
+        await context.close().catch(() => { });
         throw error;
       }
     });
@@ -487,7 +486,7 @@ class ScraperService {
 
   async getProductInfo(url) {
     const productData = await this.scrapeProduct(url);
-    
+
     return {
       name: productData.title,
       price: productData.price,
@@ -516,41 +515,41 @@ class ScraperService {
         viewport: { width: 1366, height: 768 }
       });
       const page = await context.newPage();
-      
+
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        
+
         // Wait for reviews section
-        await page.waitForSelector('[data-hook="review"], .review', { timeout: 10000 }).catch(() => {});
-        
+        await page.waitForSelector('[data-hook="review"], .review', { timeout: 10000 }).catch(() => { });
+
         const reviews = await page.evaluate((max) => {
           const reviewElements = document.querySelectorAll('[data-hook="review"]');
           const extractedReviews = [];
-          
+
           for (let i = 0; i < Math.min(reviewElements.length, max); i++) {
             const review = reviewElements[i];
-            
+
             const ratingElement = review.querySelector('[data-hook="review-star-rating"], .review-rating');
             const rating = ratingElement ? parseFloat(ratingElement.textContent.match(/[\d.]+/)?.[0] || '0') : 0;
-            
+
             const textElement = review.querySelector('[data-hook="review-body"], .review-text');
             const text = textElement ? textElement.textContent.trim() : '';
-            
+
             const titleElement = review.querySelector('[data-hook="review-title"], .review-title');
             const title = titleElement ? titleElement.textContent.trim() : '';
-            
+
             const reviewerElement = review.querySelector('[data-hook="genome-widget"], .reviewer-name');
             const reviewer = reviewerElement ? reviewerElement.textContent.trim() : 'Anonymous';
-            
+
             const dateElement = review.querySelector('[data-hook="review-date"], .review-date');
             const date = dateElement ? dateElement.textContent.trim() : '';
-            
+
             const verifiedElement = review.querySelector('[data-hook="avp-badge"], .avp-badge');
             const verifiedPurchase = !!verifiedElement;
-            
+
             const helpfulElement = review.querySelector('[data-hook="helpful-vote-statement"]');
             const helpfulVotes = helpfulElement ? parseInt(helpfulElement.textContent.match(/\d+/)?.[0] || '0') : 0;
-            
+
             if (text && rating) {
               extractedReviews.push({
                 rating,
@@ -567,14 +566,14 @@ class ScraperService {
               });
             }
           }
-          
+
           return extractedReviews;
         }, maxReviews);
-        
+
         await context.close();
         return reviews;
       } catch (error) {
-        await context.close().catch(() => {});
+        await context.close().catch(() => { });
         throw error;
       }
     });
@@ -591,38 +590,38 @@ class ScraperService {
         viewport: { width: 1366, height: 768 }
       });
       const page = await context.newPage();
-      
+
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        
+
         // Wait for reviews section
-        await page.waitForSelector('._27M-vq, .review-container', { timeout: 10000 }).catch(() => {});
-        
+        await page.waitForSelector('._27M-vq, .review-container', { timeout: 10000 }).catch(() => { });
+
         const reviews = await page.evaluate((max) => {
           const reviewElements = document.querySelectorAll('._27M-vq');
           const extractedReviews = [];
-          
+
           for (let i = 0; i < Math.min(reviewElements.length, max); i++) {
             const review = reviewElements[i];
-            
+
             const ratingElement = review.querySelector('._3LWZlK');
             const rating = ratingElement ? parseFloat(ratingElement.textContent) : 0;
-            
+
             const textElement = review.querySelector('.t-ZTKy');
             const text = textElement ? textElement.textContent.trim() : '';
-            
+
             const reviewerElement = review.querySelector('._2sc7ZR');
             const reviewer = reviewerElement ? reviewerElement.textContent.trim() : 'Anonymous';
-            
+
             const dateElement = review.querySelector('._2-N8zT');
             const date = dateElement ? dateElement.textContent.trim() : '';
-            
+
             const verifiedElement = review.querySelector('._1lRcqv');
             const verifiedPurchase = !!verifiedElement;
-            
+
             const helpfulElement = review.querySelector('._3c3Ev5');
             const helpfulVotes = helpfulElement ? parseInt(helpfulElement.textContent.match(/\d+/)?.[0] || '0') : 0;
-            
+
             if (text && rating) {
               extractedReviews.push({
                 rating,
@@ -639,14 +638,14 @@ class ScraperService {
               });
             }
           }
-          
+
           return extractedReviews;
         }, maxReviews);
-        
+
         await context.close();
         return reviews;
       } catch (error) {
-        await context.close().catch(() => {});
+        await context.close().catch(() => { });
         throw error;
       }
     });

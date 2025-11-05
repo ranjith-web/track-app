@@ -8,7 +8,7 @@ const aiService = require('../services/aiService');
 router.post('/track', async (req, res) => {
   try {
     const { url, platform } = req.body;
-    
+
     if (!url) {
       return res.status(400).json({ error: 'URL is required' });
     }
@@ -31,14 +31,14 @@ router.post('/track', async (req, res) => {
 
     // Scrape product information with timeout
     const scrapingPromise = scraperService.getProductInfo(url);
-    const timeoutPromise = new Promise((_, reject) => 
+    const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Scraping timeout')), 30000)
     );
-    
+
     const productInfo = await Promise.race([scrapingPromise, timeoutPromise]);
-    
+
     console.log('🔍 Product info from scraping:', JSON.stringify(productInfo, null, 2));
-    
+
     if (!productInfo.price) {
       return res.status(400).json({ error: 'Could not extract price information' });
     }
@@ -63,15 +63,53 @@ router.post('/track', async (req, res) => {
 
     await product.save();
 
+    // Automatically trigger AI analysis in background (non-blocking)
+    // This will provide initial insights even with just one price point
+    setImmediate(async () => {
+      try {
+        console.log(`🤖 Auto-triggering AI analysis for new product: ${product._id}`);
+
+        // Use atomic update to avoid version conflicts
+        const analysis = await aiService.analyzePriceTrend(product.priceHistory);
+
+        const currentPrice = Object.values(product.currentPrice || {})
+          .filter(p => p && p > 0)
+          .reduce((min, p) => Math.min(min, p), Infinity);
+
+        await Product.findByIdAndUpdate(
+          product._id,
+          {
+            $set: {
+              'aiAnalysis.trend': analysis.trend,
+              'aiAnalysis.confidence': analysis.confidence,
+              'aiAnalysis.prediction': analysis.prediction,
+              'aiAnalysis.recommendation': analysis.recommendation,
+              'aiAnalysis.stability': analysis.stability,
+              'aiAnalysis.analysis': analysis.analysis,
+              'aiAnalysis.lastAnalyzed': new Date(),
+              'aiAnalysis.priceSnapshot': currentPrice
+            }
+          },
+          { runValidators: true }
+        );
+
+        console.log(`✅ Auto AI analysis completed for product: ${product.name}`);
+      } catch (error) {
+        console.error(`⚠️  Auto AI analysis failed for product ${product._id}:`, error.message);
+        // Don't throw - this is background process, shouldn't affect product creation
+      }
+    });
+
     res.json({
       message: 'Product added for tracking',
-      product
+      product,
+      note: 'AI analysis will be generated automatically in the background'
     });
   } catch (error) {
     console.error('Track product error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to track product',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -80,7 +118,7 @@ router.post('/track', async (req, res) => {
 router.get('/current/:productId', async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -104,7 +142,7 @@ router.get('/current/:productId', async (req, res) => {
 router.post('/update/:productId', async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -122,17 +160,17 @@ router.post('/update/:productId', async (req, res) => {
       try {
         const productInfo = await scraperService.getProductInfo(url);
         const source = scraperService.getSourceFromUrl(url);
-        
+
         // Track if result was from cache
         if (productInfo.fromCache) {
           updateInfo.cached.push(source);
         } else {
           updateInfo.scraped.push(source);
         }
-        
+
         if (productInfo.price) {
           updatedPrices[source] = productInfo.price;
-          
+
           // Only add to price history if it's a new scrape (not cached)
           if (!productInfo.fromCache) {
             product.priceHistory.push({
@@ -153,12 +191,12 @@ router.post('/update/:productId', async (req, res) => {
     // Update current prices
     product.currentPrice = { ...product.currentPrice, ...updatedPrices };
     product.lastChecked = new Date();
-    
+
     await product.save();
 
     res.json({
-      message: updateInfo.cached.length > 0 
-        ? 'Prices returned from cache (recently updated)' 
+      message: updateInfo.cached.length > 0
+        ? 'Prices returned from cache (recently updated)'
         : 'Prices updated successfully',
       updatedPrices,
       lastChecked: product.lastChecked,
@@ -180,7 +218,7 @@ router.get('/history/:productId', async (req, res) => {
   try {
     const { months = 3 } = req.query;
     const product = await Product.findById(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -209,7 +247,7 @@ router.get('/history/:productId', async (req, res) => {
 router.post('/click/:productId', async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -260,14 +298,14 @@ router.get('/products', async (req, res) => {
 router.post('/test-scrape', async (req, res) => {
   try {
     const { url } = req.body;
-    
+
     if (!url) {
       return res.status(400).json({ error: 'URL is required' });
     }
 
     console.log(`Testing scraping for URL: ${url}`);
     const productInfo = await scraperService.getProductInfo(url);
-    
+
     res.json({
       message: productInfo.fromCache ? 'Returned from cache' : 'Scraping test successful',
       productInfo,
@@ -275,9 +313,9 @@ router.post('/test-scrape', async (req, res) => {
     });
   } catch (error) {
     console.error('Test scraping error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Scraping test failed',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -301,8 +339,8 @@ router.post('/clear-cache', (req, res) => {
   try {
     const { url } = req.body;
     scraperService.clearCache(url);
-    res.json({ 
-      message: url ? `Cache cleared for ${url}` : 'All cache cleared' 
+    res.json({
+      message: url ? `Cache cleared for ${url}` : 'All cache cleared'
     });
   } catch (error) {
     console.error('Clear cache error:', error);

@@ -9,14 +9,14 @@ const scraperService = require('../services/scraperService');
 router.post('/analyze/:productId', async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
     if (!product.priceHistory || product.priceHistory.length < 1) {
-      return res.status(400).json({ 
-        error: 'No price history available for analysis' 
+      return res.status(400).json({
+        error: 'No price history available for analysis'
       });
     }
 
@@ -26,13 +26,13 @@ router.post('/analyze/:productId', async (req, res) => {
       .reduce((min, p) => Math.min(min, p), Infinity);
 
     // Check if we have cached analysis and price hasn't changed significantly
-    if (product.aiAnalysis && 
-        product.aiAnalysis.lastAnalyzed &&
-        product.aiAnalysis.priceSnapshot) {
-      
+    if (product.aiAnalysis &&
+      product.aiAnalysis.lastAnalyzed &&
+      product.aiAnalysis.priceSnapshot) {
+
       const hoursSinceAnalysis = (Date.now() - product.aiAnalysis.lastAnalyzed) / (1000 * 60 * 60);
       const priceChangePercent = Math.abs((currentPrice - product.aiAnalysis.priceSnapshot) / product.aiAnalysis.priceSnapshot * 100);
-      
+
       // Return cached analysis if:
       // - Analyzed within last 24 hours AND
       // - Price changed less than 5%
@@ -50,25 +50,34 @@ router.post('/analyze/:productId', async (req, res) => {
     // Generate fresh AI analysis
     console.log('🔄 Generating fresh AI analysis...');
     const analysis = await aiService.analyzePriceTrend(product.priceHistory);
-    
-    // Save complete analysis to database
-    product.aiAnalysis = {
-      trend: analysis.trend,
-      confidence: analysis.confidence,
-      prediction: analysis.prediction,
-      recommendation: analysis.recommendation,
-      stability: analysis.stability,
-      analysis: analysis.analysis,
-      lastAnalyzed: new Date(),
-      priceSnapshot: currentPrice
-    };
-    
-    await product.save();
+
+    // Use atomic update to avoid version conflicts
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.productId,
+      {
+        $set: {
+          'aiAnalysis.trend': analysis.trend,
+          'aiAnalysis.confidence': analysis.confidence,
+          'aiAnalysis.prediction': analysis.prediction,
+          'aiAnalysis.recommendation': analysis.recommendation,
+          'aiAnalysis.stability': analysis.stability,
+          'aiAnalysis.analysis': analysis.analysis,
+          'aiAnalysis.lastAnalyzed': new Date(),
+          'aiAnalysis.priceSnapshot': currentPrice
+        }
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedProduct) {
+      return res.status(404).json({ error: 'Product not found or was deleted' });
+    }
+
     console.log('✅ AI analysis saved to database');
 
     res.json({
       message: 'Fresh price analysis completed',
-      analysis: product.aiAnalysis,
+      analysis: updatedProduct.aiAnalysis,
       cached: false
     });
   } catch (error) {
@@ -81,7 +90,7 @@ router.post('/analyze/:productId', async (req, res) => {
 router.get('/insights/:productId', async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -89,23 +98,23 @@ router.get('/insights/:productId', async (req, res) => {
     // Get current lowest price
     const validPrices = Object.values(product.currentPrice || {})
       .filter(p => p && p > 0);
-    
-    const currentPrice = validPrices.length > 0 
-      ? Math.min(...validPrices) 
+
+    const currentPrice = validPrices.length > 0
+      ? Math.min(...validPrices)
       : 0;
-    
+
     if (currentPrice === 0) {
       return res.status(400).json({ error: 'No valid price data available for this product' });
     }
 
     // Check if we have cached insights and price hasn't changed significantly
-    if (product.buyingInsights && 
-        product.buyingInsights.lastAnalyzed &&
-        product.buyingInsights.priceSnapshot) {
-      
+    if (product.buyingInsights &&
+      product.buyingInsights.lastAnalyzed &&
+      product.buyingInsights.priceSnapshot) {
+
       const hoursSinceAnalysis = (Date.now() - new Date(product.buyingInsights.lastAnalyzed)) / (1000 * 60 * 60);
       const priceChangePercent = Math.abs((currentPrice - product.buyingInsights.priceSnapshot) / product.buyingInsights.priceSnapshot * 100);
-      
+
       // Return cached insights if:
       // - Analyzed within last 24 hours AND
       // - Price changed less than 5%
@@ -127,28 +136,28 @@ router.get('/insights/:productId', async (req, res) => {
       cons: [],
       fakeReviewPercentage: 0
     };
-    const shouldScrapeReviews = !product.reviews?.lastScraped || 
-                                (Date.now() - product.reviews.lastScraped) > (7 * 24 * 60 * 60 * 1000);
+    const shouldScrapeReviews = !product.reviews?.lastScraped ||
+      (Date.now() - product.reviews.lastScraped) > (7 * 24 * 60 * 60 * 1000);
 
     if (shouldScrapeReviews && product.urls) {
       console.log('📝 Scraping and analyzing reviews...');
-      
+
       // Get URL (prefer Amazon, then Flipkart)
       const url = product.urls.amazon || product.urls.flipkart;
-      
+
       if (url) {
         try {
           // Scrape reviews
           const rawReviews = await scraperService.scrapeReviews(url, 20);
-          
+
           if (rawReviews.length > 0) {
             // Filter fake reviews
             const filtered = await reviewAnalysisService.filterGenuineReviews(rawReviews);
-            
+
             // Generate insights from genuine reviews
             const reviewInsights = await reviewAnalysisService.generateReviewInsights(filtered.genuine);
             console.log('🔍 Review insights received:', JSON.stringify(reviewInsights, null, 2));
-            
+
             // Save review summary with validation
             reviewSummary = {
               averageRating: reviewInsights.averageRating || 0,
@@ -159,7 +168,7 @@ router.get('/insights/:productId', async (req, res) => {
               fakeReviewPercentage: 100 - (filtered.stats.genuinePercentage || 0)
             };
             console.log('📝 Final reviewSummary:', JSON.stringify(reviewSummary, null, 2));
-            
+
             // Update product reviews stats
             product.reviews = {
               lastScraped: new Date(),
@@ -167,7 +176,7 @@ router.get('/insights/:productId', async (req, res) => {
               genuineReviews: filtered.stats.genuine,
               suspiciousReviews: filtered.stats.suspicious
             };
-            
+
             console.log(`✅ Reviews analyzed: ${filtered.stats.genuine}/${filtered.stats.total} genuine (${filtered.stats.genuinePercentage}%)`);
           }
         } catch (error) {
@@ -199,31 +208,49 @@ router.get('/insights/:productId', async (req, res) => {
         fakeReviewPercentage: 0
       };
     }
-    
-    // Set buyingInsights fields individually to avoid Mongoose issues
-    product.buyingInsights.dealScore = insights.dealScore;
-    product.buyingInsights.isGoodDeal = insights.isGoodDeal;
-    product.buyingInsights.priceComparison = insights.priceComparison;
-    product.buyingInsights.seasonalTrend = insights.seasonalTrend;
-    product.buyingInsights.strategy = insights.strategy;
-    product.buyingInsights.insights = insights.insights;
-    product.buyingInsights.lastAnalyzed = new Date();
-    product.buyingInsights.priceSnapshot = currentPrice;
-    
-    // Set reviewSummary directly
-    product.buyingInsights.reviewSummary = {
-      averageRating: reviewSummary.averageRating,
-      totalGenuineReviews: reviewSummary.totalGenuineReviews,
-      sentiment: reviewSummary.sentiment,
-      pros: [...(reviewSummary.pros || [])],
-      cons: [...(reviewSummary.cons || [])],
-      fakeReviewPercentage: reviewSummary.fakeReviewPercentage
+
+    // Use atomic update to avoid version conflicts
+    const updateData = {
+      $set: {
+        'buyingInsights.dealScore': insights.dealScore,
+        'buyingInsights.isGoodDeal': insights.isGoodDeal,
+        'buyingInsights.priceComparison': insights.priceComparison,
+        'buyingInsights.seasonalTrend': insights.seasonalTrend,
+        'buyingInsights.strategy': insights.strategy,
+        'buyingInsights.insights': insights.insights,
+        'buyingInsights.lastAnalyzed': new Date(),
+        'buyingInsights.priceSnapshot': currentPrice,
+        'buyingInsights.reviewSummary': {
+          averageRating: reviewSummary.averageRating,
+          totalGenuineReviews: reviewSummary.totalGenuineReviews,
+          sentiment: reviewSummary.sentiment,
+          pros: [...(reviewSummary.pros || [])],
+          cons: [...(reviewSummary.cons || [])],
+          fakeReviewPercentage: reviewSummary.fakeReviewPercentage
+        }
+      }
     };
-    
-    await product.save();
+
+    // Also update reviews if they were scraped
+    if (product.reviews && product.reviews.lastScraped) {
+      updateData.$set['reviews.lastScraped'] = product.reviews.lastScraped;
+      updateData.$set['reviews.totalReviews'] = product.reviews.totalReviews || 0;
+      updateData.$set['reviews.genuineReviews'] = product.reviews.genuineReviews || 0;
+      updateData.$set['reviews.suspiciousReviews'] = product.reviews.suspiciousReviews || 0;
+    }
+
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.productId,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedProduct) {
+      return res.status(404).json({ error: 'Product not found or was deleted' });
+    }
 
     res.json({
-      insights: product.buyingInsights,
+      insights: updatedProduct.buyingInsights,
       cached: false
     });
   } catch (error) {
@@ -236,13 +263,13 @@ router.get('/insights/:productId', async (req, res) => {
 router.post('/alert/:productId', async (req, res) => {
   try {
     const { targetPrice } = req.body;
-    
+
     if (!targetPrice) {
       return res.status(400).json({ error: 'Target price is required' });
     }
 
     const product = await Product.findById(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -272,7 +299,7 @@ router.post('/alert/:productId', async (req, res) => {
 router.get('/recommendations/:productId', async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -296,27 +323,37 @@ router.get('/recommendations/:productId', async (req, res) => {
 router.post('/bulk-analyze', async (req, res) => {
   try {
     const { productIds } = req.body;
-    
+
     if (!productIds || !Array.isArray(productIds)) {
       return res.status(400).json({ error: 'Product IDs array is required' });
     }
 
     const results = [];
-    
+
     for (const productId of productIds) {
       try {
         const product = await Product.findById(productId);
-        
+
         if (product && product.priceHistory.length >= 2) {
           const analysis = await aiService.analyzePriceTrend(product.priceHistory);
-          
-          product.aiAnalysis = {
-            ...analysis,
-            lastAnalyzed: new Date()
-          };
-          
-          await product.save();
-          
+
+          // Use atomic update to avoid version conflicts
+          await Product.findByIdAndUpdate(
+            productId,
+            {
+              $set: {
+                'aiAnalysis.trend': analysis.trend,
+                'aiAnalysis.confidence': analysis.confidence,
+                'aiAnalysis.prediction': analysis.prediction,
+                'aiAnalysis.recommendation': analysis.recommendation,
+                'aiAnalysis.stability': analysis.stability,
+                'aiAnalysis.analysis': analysis.analysis,
+                'aiAnalysis.lastAnalyzed': new Date()
+              }
+            },
+            { runValidators: true }
+          );
+
           results.push({
             productId,
             status: 'success',
@@ -353,18 +390,18 @@ router.get('/status', async (req, res) => {
   try {
     const hasApiKey = !!process.env.GEMINI_API_KEY || !!aiService.apiKey;
     const isConfigured = aiService.model !== null;
-    
+
     res.json({
       hasApiKey,
       isConfigured,
       status: hasApiKey && isConfigured ? 'ready' : 'not_configured',
-      message: hasApiKey && isConfigured 
-        ? 'AI service is ready (Gemini)' 
+      message: hasApiKey && isConfigured
+        ? 'AI service is ready (Gemini)'
         : 'AI service is not configured. Please set GEMINI_API_KEY environment variable.'
     });
   } catch (error) {
     console.error('AI status check error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to check AI service status',
       hasApiKey: false,
       isConfigured: false,
@@ -381,9 +418,9 @@ router.post('/test', async (req, res) => {
       timestamp: new Date(),
       source: 'test'
     }];
-    
+
     const result = await aiService.analyzePriceTrend(testData);
-    
+
     res.json({
       message: 'AI service test completed',
       result,
@@ -391,7 +428,7 @@ router.post('/test', async (req, res) => {
     });
   } catch (error) {
     console.error('AI test error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'AI service test failed',
       details: error.message,
       status: 'error'
@@ -403,7 +440,7 @@ router.post('/test', async (req, res) => {
 router.post('/generate-sample-data/:productId', async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
-    
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -452,17 +489,20 @@ router.post('/generate-sample-data/:productId', async (req, res) => {
       { price: 154900, currency: 'INR', source: 'amazon', availability: 'in_stock', discount: 0, timestamp: new Date('2025-10-25T08:00:00Z') }
     ];
 
-    // Clear existing price history and add sample data
-    product.priceHistory = samplePriceHistory;
-    
-    // Update current price to the latest
-    product.currentPrice = {
-      amazon: samplePriceHistory[samplePriceHistory.length - 1].price
-    };
-    
-    // Save the product
-    await product.save();
-    
+    // Use atomic update to avoid version conflicts
+    const latestPrice = samplePriceHistory[samplePriceHistory.length - 1].price;
+
+    await Product.findByIdAndUpdate(
+      req.params.productId,
+      {
+        $set: {
+          priceHistory: samplePriceHistory,
+          'currentPrice.amazon': latestPrice
+        }
+      },
+      { runValidators: true }
+    );
+
     res.json({
       success: true,
       message: `Generated ${samplePriceHistory.length} price history entries`,
@@ -471,7 +511,7 @@ router.post('/generate-sample-data/:productId', async (req, res) => {
         max: Math.max(...samplePriceHistory.map(p => p.price))
       }
     });
-    
+
   } catch (error) {
     console.error('Error generating sample data:', error);
     res.status(500).json({ error: 'Failed to generate sample data' });

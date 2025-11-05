@@ -16,6 +16,23 @@ const productSchema = new mongoose.Schema({
   image: { type: String },
   category: { type: String },
   brand: { type: String },
+  specifications: {
+    type: {
+      ram: { type: String },
+      storage: { type: String },
+      processor: { type: String },
+      operatingSystem: { type: String },
+      display: { type: String },
+      refreshRate: { type: String },
+      brightness: { type: String },
+      design: { type: String },
+      modelNumber: { type: String },
+      series: { type: String },
+      color: { type: String },
+      additionalInfo: { type: String }
+    },
+    default: {}
+  },
   urls: {
     amazon: { type: String },
     flipkart: { type: String },
