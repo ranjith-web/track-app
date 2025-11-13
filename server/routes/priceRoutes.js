@@ -39,8 +39,13 @@ router.post('/track', async (req, res) => {
 
     console.log('🔍 Product info from scraping:', JSON.stringify(productInfo, null, 2));
 
+    // Allow products without price to be saved (price can be updated later)
+    if (!productInfo.name) {
+      return res.status(400).json({ error: 'Could not extract product name' });
+    }
+
     if (!productInfo.price) {
-      return res.status(400).json({ error: 'Could not extract price information' });
+      console.warn('⚠️ Product added without price. Price can be updated later via "Update Price" button.');
     }
 
     // Create new product
@@ -50,18 +55,85 @@ router.post('/track', async (req, res) => {
       urls: {
         [productInfo.source]: url
       },
-      currentPrice: {
+      currentPrice: productInfo.price ? {
         [productInfo.source]: productInfo.price
-      },
-      priceHistory: [{
+      } : {},
+      priceHistory: productInfo.price ? [{
         price: productInfo.price,
         source: productInfo.source,
-        availability: productInfo.availability,
-        discount: productInfo.discount
-      }]
+        availability: productInfo.availability || 'in_stock',
+        discount: productInfo.discount || 0
+      }] : []
     });
 
     await product.save();
+
+    // Automatically find product on other marketplaces in background
+    setImmediate(async () => {
+      try {
+        console.log(`🔍 Auto-searching for "${productInfo.name}" on other marketplaces...`);
+        const marketplaceResults = await scraperService.findProductAcrossMarketplaces(
+          productInfo.name,
+          productInfo.source,
+          product.urls
+        );
+
+        // Update product with found marketplace URLs and prices
+        const updateData = { $set: {} };
+        const priceHistoryEntries = [];
+
+        if (marketplaceResults.amazon) {
+          updateData.$set['urls.amazon'] = marketplaceResults.amazon.url;
+          if (marketplaceResults.amazon.price) {
+            updateData.$set['currentPrice.amazon'] = marketplaceResults.amazon.price;
+            priceHistoryEntries.push({
+              price: marketplaceResults.amazon.price,
+              source: 'amazon',
+              availability: 'in_stock',
+              timestamp: new Date()
+            });
+          }
+        }
+
+        if (marketplaceResults.flipkart) {
+          updateData.$set['urls.flipkart'] = marketplaceResults.flipkart.url;
+          if (marketplaceResults.flipkart.price) {
+            updateData.$set['currentPrice.flipkart'] = marketplaceResults.flipkart.price;
+            priceHistoryEntries.push({
+              price: marketplaceResults.flipkart.price,
+              source: 'flipkart',
+              availability: 'in_stock',
+              timestamp: new Date()
+            });
+          }
+        }
+
+        if (marketplaceResults.reliancedigital) {
+          updateData.$set['urls.reliancedigital'] = marketplaceResults.reliancedigital.url;
+          if (marketplaceResults.reliancedigital.price) {
+            updateData.$set['currentPrice.reliancedigital'] = marketplaceResults.reliancedigital.price;
+            priceHistoryEntries.push({
+              price: marketplaceResults.reliancedigital.price,
+              source: 'reliancedigital',
+              availability: 'in_stock',
+              timestamp: new Date()
+            });
+          }
+        }
+
+        if (priceHistoryEntries.length > 0) {
+          updateData.$push = { priceHistory: { $each: priceHistoryEntries } };
+        }
+
+        if (Object.keys(updateData.$set).length > 0) {
+          await Product.updateOne({ _id: product._id }, updateData);
+          console.log(`✅ Updated product with ${Object.keys(updateData.$set).length} marketplace(s)`);
+        }
+      } catch (error) {
+        console.error(`⚠️  Error finding product on other marketplaces: ${error.message}`);
+        // Don't throw - this is background process
+      }
+    });
 
     // Automatically trigger AI analysis in background (non-blocking)
     // This will provide initial insights even with just one price point

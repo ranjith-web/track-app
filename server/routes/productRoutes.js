@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
+const scraperService = require('../services/scraperService');
 
 // Helper function to format price
 const formatPrice = (price) => {
@@ -1207,6 +1208,174 @@ router.get('/:productId/stats', async (req, res) => {
   } catch (error) {
     console.error('Get product stats error:', error);
     res.status(500).json({ error: 'Failed to get product statistics' });
+  }
+});
+
+// Compare product prices across marketplaces
+router.get('/:productId/compare', async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.productId);
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    console.log(`🔍 Comparison for product: ${product.name}`);
+    console.log(`   URLs:`, JSON.stringify(product.urls, null, 2));
+    console.log(`   Current Prices:`, JSON.stringify(product.currentPrice, null, 2));
+
+    const comparison = {
+      productName: product.name,
+      productImage: product.image,
+      marketplaces: []
+    };
+
+    // Amazon
+    if (product.urls?.amazon) {
+      const amazonPrice = product.currentPrice?.amazon || null;
+      console.log(`   Amazon: URL=${!!product.urls.amazon}, Price=${amazonPrice}`);
+      comparison.marketplaces.push({
+        marketplace: 'amazon',
+        name: 'Amazon',
+        url: product.urls.amazon,
+        price: amazonPrice,
+        available: !!amazonPrice && amazonPrice > 0
+      });
+    }
+
+    // Flipkart
+    if (product.urls?.flipkart) {
+      const flipkartPrice = product.currentPrice?.flipkart || null;
+      console.log(`   Flipkart: URL=${!!product.urls.flipkart}, Price=${flipkartPrice}`);
+      comparison.marketplaces.push({
+        marketplace: 'flipkart',
+        name: 'Flipkart',
+        url: product.urls.flipkart,
+        price: flipkartPrice,
+        available: !!flipkartPrice && flipkartPrice > 0
+      });
+    }
+
+    // Reliance Digital
+    if (product.urls?.reliancedigital) {
+      comparison.marketplaces.push({
+        marketplace: 'reliancedigital',
+        name: 'Reliance Digital',
+        url: product.urls.reliancedigital,
+        price: product.currentPrice?.reliancedigital || null,
+        available: !!product.currentPrice?.reliancedigital
+      });
+    }
+
+    // Find best price
+    const prices = comparison.marketplaces
+      .filter(m => m.price && m.price > 0)
+      .map(m => m.price);
+
+    if (prices.length > 0) {
+      const lowestPrice = Math.min(...prices);
+      const highestPrice = Math.max(...prices);
+      comparison.bestPrice = lowestPrice;
+      comparison.priceRange = highestPrice - lowestPrice;
+      comparison.bestMarketplace = comparison.marketplaces.find(m => m.price === lowestPrice)?.marketplace;
+    }
+
+    res.json({ comparison });
+  } catch (error) {
+    console.error('Compare product error:', error);
+    res.status(500).json({ error: 'Failed to compare product prices' });
+  }
+});
+
+// Manually trigger marketplace search for a product
+router.post('/:productId/find-marketplaces', async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.productId);
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    if (!product.name) {
+      return res.status(400).json({ error: 'Product name is required for marketplace search' });
+    }
+
+    // Determine source marketplace
+    let sourceMarketplace = 'amazon';
+    if (product.urls?.flipkart && !product.urls?.amazon) {
+      sourceMarketplace = 'flipkart';
+    } else if (product.urls?.reliancedigital && !product.urls?.amazon && !product.urls?.flipkart) {
+      sourceMarketplace = 'reliancedigital';
+    }
+
+    console.log(`🔍 Manually searching for "${product.name}" on other marketplaces...`);
+    const marketplaceResults = await scraperService.findProductAcrossMarketplaces(
+      product.name,
+      sourceMarketplace,
+      product.urls || {}
+    );
+
+    // Update product with found marketplace URLs and prices
+    const updateData = { $set: {} };
+    const priceHistoryEntries = [];
+
+    if (marketplaceResults.amazon) {
+      updateData.$set['urls.amazon'] = marketplaceResults.amazon.url;
+      if (marketplaceResults.amazon.price) {
+        updateData.$set['currentPrice.amazon'] = marketplaceResults.amazon.price;
+        priceHistoryEntries.push({
+          price: marketplaceResults.amazon.price,
+          source: 'amazon',
+          availability: 'in_stock',
+          timestamp: new Date()
+        });
+      }
+    }
+
+    if (marketplaceResults.flipkart) {
+      updateData.$set['urls.flipkart'] = marketplaceResults.flipkart.url;
+      if (marketplaceResults.flipkart.price) {
+        updateData.$set['currentPrice.flipkart'] = marketplaceResults.flipkart.price;
+        priceHistoryEntries.push({
+          price: marketplaceResults.flipkart.price,
+          source: 'flipkart',
+          availability: 'in_stock',
+          timestamp: new Date()
+        });
+      }
+    }
+
+    if (marketplaceResults.reliancedigital) {
+      updateData.$set['urls.reliancedigital'] = marketplaceResults.reliancedigital.url;
+      if (marketplaceResults.reliancedigital.price) {
+        updateData.$set['currentPrice.reliancedigital'] = marketplaceResults.reliancedigital.price;
+        priceHistoryEntries.push({
+          price: marketplaceResults.reliancedigital.price,
+          source: 'reliancedigital',
+          availability: 'in_stock',
+          timestamp: new Date()
+        });
+      }
+    }
+
+    if (priceHistoryEntries.length > 0) {
+      updateData.$push = { priceHistory: { $each: priceHistoryEntries } };
+    }
+
+    if (Object.keys(updateData.$set).length > 0) {
+      await Product.updateOne({ _id: product._id }, updateData);
+    }
+
+    const updatedProduct = await Product.findById(req.params.productId);
+
+    res.json({
+      message: 'Marketplace search completed',
+      product: updatedProduct,
+      results: marketplaceResults
+    });
+  } catch (error) {
+    console.error('Find marketplaces error:', error);
+    res.status(500).json({ error: 'Failed to find product on marketplaces', details: error.message });
   }
 });
 

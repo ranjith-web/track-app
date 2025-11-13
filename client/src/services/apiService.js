@@ -50,7 +50,12 @@ export const apiService = {
   },
 
   async getProductComparison(productId) {
-    const response = await api.get(`/products/compare/${productId}`)
+    const response = await api.get(`/products/${productId}/compare`)
+    return response.data
+  },
+
+  async findProductOnMarketplaces(productId) {
+    const response = await api.post(`/products/${productId}/find-marketplaces`)
     return response.data
   },
 

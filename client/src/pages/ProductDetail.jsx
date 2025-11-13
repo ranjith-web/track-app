@@ -10,7 +10,9 @@ import {
   ExternalLink,
   AlertTriangle,
   CheckCircle,
-  BarChart3
+  BarChart3,
+  Search,
+  ShoppingBag
 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine } from 'recharts'
 import { apiService } from '../services/apiService'
@@ -28,6 +30,8 @@ const ProductDetail = () => {
   const [analysisCached, setAnalysisCached] = useState(false)
   const [insightsCached, setInsightsCached] = useState(false)
   const [timeRange, setTimeRange] = useState('max')
+  const [searchingMarketplaces, setSearchingMarketplaces] = useState(false)
+  const [comparison, setComparison] = useState(null)
 
   useEffect(() => {
     fetchProductData()
@@ -58,11 +62,45 @@ const ProductDetail = () => {
       // Load buying insights automatically
       handleGetInsights(true) // Pass true to indicate auto-load
       
+      // Load marketplace comparison
+      loadComparison()
+      
     } catch (error) {
       console.error('Error fetching product data:', error)
       toast.error('Failed to load product details')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadComparison = async () => {
+    try {
+      const response = await apiService.getProductComparison(id)
+      setComparison(response.comparison)
+    } catch (error) {
+      console.error('Error loading comparison:', error)
+    }
+  }
+
+  const handleFindMarketplaces = async () => {
+    try {
+      setSearchingMarketplaces(true)
+      const response = await apiService.findProductOnMarketplaces(id)
+      toast.success('Searching marketplaces... This may take a minute.', {
+        icon: '🔍',
+        duration: 5000
+      })
+      
+      // Refresh product data after a delay to allow background search to complete
+      setTimeout(() => {
+        fetchProductData()
+        loadComparison()
+      }, 3000)
+    } catch (error) {
+      console.error('Error finding marketplaces:', error)
+      toast.error('Failed to search marketplaces')
+    } finally {
+      setSearchingMarketplaces(false)
     }
   }
 
@@ -297,32 +335,115 @@ const ProductDetail = () => {
               </div>
             )}
 
-            {priceSources.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Available on:</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {priceSources.map(({ source, price }) => (
-                    <div key={source} className="border rounded-lg p-3">
+            {/* Marketplace Price Comparison */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gray-900 flex items-center">
+                  <ShoppingBag className="w-6 h-6 mr-2 text-blue-600" />
+                  Price Comparison Across Marketplaces
+                </h3>
+                <button
+                  onClick={handleFindMarketplaces}
+                  disabled={searchingMarketplaces}
+                  className="btn btn-secondary text-sm"
+                  title="Search for this product on other marketplaces"
+                >
+                  {searchingMarketplaces ? (
+                    <div className="loading w-4 h-4 mr-1"></div>
+                  ) : (
+                    <Search className="w-4 h-4 mr-1" />
+                  )}
+                  Find on Other Stores
+                </button>
+              </div>
+
+              {comparison && comparison.marketplaces.length > 0 ? (
+                <div className="bg-gradient-to-br from-blue-50 via-white to-indigo-50 border border-blue-200 rounded-xl p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {comparison.marketplaces.map((marketplace) => {
+                      const isBest = comparison.bestMarketplace === marketplace.marketplace
+                      return (
+                        <div
+                          key={marketplace.marketplace}
+                          className={`rounded-lg border-2 p-4 transition-all ${
+                            isBest
+                              ? 'border-green-500 bg-white shadow-lg'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-bold text-gray-900 uppercase tracking-wide text-sm">
+                              {marketplace.name}
+                            </span>
+                            {isBest && (
+                              <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-semibold">
+                                Best Price
+                              </span>
+                            )}
+                          </div>
+                          {marketplace.available && marketplace.price ? (
+                            <>
+                              <div className="text-3xl font-bold text-gray-900 mb-2">
+                                ₹{marketplace.price.toLocaleString()}
+                              </div>
+                              {isBest && comparison.priceRange > 0 && (
+                                <div className="text-xs text-green-600 font-medium">
+                                  Save ₹{comparison.priceRange.toLocaleString()} vs highest
+                                </div>
+                              )}
+                              {!isBest && comparison.bestPrice && (
+                                <div className="text-xs text-gray-500">
+                                  ₹{(marketplace.price - comparison.bestPrice).toLocaleString()} more than best
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="text-lg text-gray-400">Not Available</div>
+                          )}
+                          {marketplace.url && (
+                            <a
+                              href={marketplace.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm font-medium mt-3"
+                            >
+                              <ExternalLink className="w-4 h-4 mr-1" />
+                              Visit Store
+                            </a>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {comparison.bestPrice && (
+                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium capitalize">{source}</span>
-                        <span className="text-lg font-bold text-green-600">
-                          ₹{price.toLocaleString()}
+                        <span className="text-sm font-medium text-green-800">
+                          Best Price Available:
+                        </span>
+                        <span className="text-lg font-bold text-green-700">
+                          ₹{comparison.bestPrice.toLocaleString()} on {comparison.marketplaces.find(m => m.marketplace === comparison.bestMarketplace)?.name}
                         </span>
                       </div>
-                      <a
-                        href={product.urls?.[source]}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm mt-2"
-                      >
-                        <ExternalLink className="w-4 h-4 mr-1" />
-                        Visit Store
-                      </a>
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <AlertTriangle className="w-5 h-5 text-yellow-600 mr-2" />
+                    <div>
+                      <p className="text-sm text-yellow-800">
+                        <strong>No marketplace comparison available yet.</strong>
+                      </p>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        Click "Find on Other Stores" to search for this product on Amazon, Flipkart, and Reliance Digital.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
               <div>

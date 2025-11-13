@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.2.1",
+    "@perplexity-ai/perplexity_ai": "^0.16.0",
     "axios": "^1.5.0",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",

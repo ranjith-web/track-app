@@ -1,21 +1,57 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { Perplexity } = require('@perplexity-ai/perplexity_ai');
 
 class ReviewAnalysisService {
   constructor() {
-    this.apiKey = process.env.GEMINI_API_KEY;
-    this.genAI = null;
-    this.model = null;
-    
-    if (this.apiKey) {
-      this.genAI = new GoogleGenerativeAI(this.apiKey);
-      this.model = this.genAI.getGenerativeModel({ 
-        model: "gemini-2.0-flash-exp",
-        generationConfig: {
-          temperature: 0,
-          topK: 1,
-          topP: 1,
-        }
+    this.DEFAULT_MODEL = 'sonar';
+    this.apiKey = process.env.PERPLEXITY_API_KEY;
+    this.modelName = process.env.PERPLEXITY_REVIEW_MODEL || this.DEFAULT_MODEL;
+
+    if (!this.apiKey) {
+      console.warn('PERPLEXITY_API_KEY not found for review analysis. Using fallback methods.');
+      this.client = null;
+    } else {
+      this.client = new Perplexity({ apiKey: this.apiKey });
+      console.log(`✅ Perplexity review model initialised: ${this.modelName}`);
+    }
+  }
+
+  async callPerplexity(messages, options = {}) {
+    if (!this.apiKey || !this.client) {
+      throw new Error('Perplexity API key not configured for review analysis');
+    }
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.modelName,
+        messages,
+        temperature: options.temperature || 0,
+        ...options
       });
+
+      const content = response?.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error('Perplexity response did not contain content');
+      }
+      return content;
+    } catch (error) {
+      // Handle SDK-specific errors
+      if (error.status === 429) {
+        error.message = 'Perplexity API quota exceeded or rate limited.';
+      } else if (error.status === 401) {
+        error.message = 'Perplexity API key is invalid.';
+      }
+      throw error;
+    }
+  }
+
+  extractJson(text) {
+    if (!text) return null;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (error) {
+      return null;
     }
   }
 
@@ -63,7 +99,7 @@ class ReviewAnalysisService {
       authenticityScore = Math.max(0, Math.min(100, authenticityScore));
 
       // Use AI for final verification on borderline cases
-      if (authenticityScore >= 40 && authenticityScore <= 70 && this.model) {
+      if (authenticityScore >= 40 && authenticityScore <= 70 && this.apiKey) {
         const aiScore = await this.aiAuthenticityCheck(review);
         authenticityScore = (authenticityScore + aiScore) / 2;
       }
@@ -120,7 +156,7 @@ class ReviewAnalysisService {
       'value for money',
       'excellent quality'
     ];
-    
+
     const textLower = text.toLowerCase();
     let genericCount = 0;
     genericPhrases.forEach(phrase => {
@@ -258,7 +294,7 @@ class ReviewAnalysisService {
     }
 
     const daysSinceReview = (Date.now() - new Date(reviewDate)) / (1000 * 60 * 60 * 24);
-    
+
     if (daysSinceReview < 1) {
       return { score: -5, issues: ['Very recent review'] };
     } else if (daysSinceReview > 30) {
@@ -273,31 +309,22 @@ class ReviewAnalysisService {
    */
   async aiAuthenticityCheck(review) {
     try {
-      if (!this.model) return 50;
+      if (!this.apiKey) return 50;
 
-      const prompt = `Analyze this product review for authenticity (0-100, higher = more genuine):
+      const systemPrompt = 'You score review authenticity from 0 to 100 (higher = more genuine). Reply with only the number.';
+      const userPrompt = `Review Text: "${review.text}"\nRating: ${review.rating}/5\nVerified Purchase: ${review.verifiedPurchase ? 'Yes' : 'No'}\nHelpful Votes: ${review.helpfulVotes || 0}\n\nReturn only a number 0-100.`;
 
-Review Text: "${review.text}"
-Rating: ${review.rating}/5
-Verified Purchase: ${review.verifiedPurchase ? 'Yes' : 'No'}
+      const text = await this.callPerplexity([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ]);
 
-Detect signs of:
-1. Fake/incentivized reviews (generic praise, no specifics)
-2. Competitor sabotage (extreme negativity without details)
-3. Genuine customer experience (specific details, balanced view)
-
-Respond with ONLY a number 0-100 representing authenticity score.`;
-
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text().trim();
-      
       const score = parseInt(text);
       return isNaN(score) ? 50 : Math.max(0, Math.min(100, score));
     } catch (error) {
       // Silently fallback to rule-based score on AI error (quota, etc.)
       if (error.status === 429) {
-        console.warn('⚠️  Gemini quota exceeded in review analysis. Using rule-based scoring.');
+        console.warn('⚠️  Perplexity quota exceeded in review analysis. Using rule-based scoring.');
       }
       return 50; // Neutral score - rely on other signals
     }
@@ -324,7 +351,7 @@ Respond with ONLY a number 0-100 representing authenticity score.`;
     totalIndicators++;
 
     const confidenceRatio = indicators / totalIndicators;
-    
+
     if (confidenceRatio > 0.75) return 'high';
     if (confidenceRatio > 0.5) return 'medium';
     return 'low';
@@ -438,39 +465,30 @@ Respond with ONLY a number 0-100 representing authenticity score.`;
 
     // Extract pros and cons using AI
     const reviewTexts = genuineReviews.slice(0, 20).map(r => r.text).join('\n\n');
-    
+
     let pros = [];
     let cons = [];
     let summary = '';
 
-    if (this.model) {
+    if (this.apiKey) {
       try {
-        const prompt = `Analyze these genuine product reviews and extract:
+        const systemPrompt = 'You summarise customer reviews. Respond strictly with JSON containing pros (array), cons (array), summary (string).';
+        const userPrompt = `Analyze these genuine product reviews and extract 3-5 pros, 3-5 cons, and a 2-sentence summary.\n\n${reviewTexts}`;
 
-Reviews:
-${reviewTexts}
+        const text = await this.callPerplexity([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ]);
 
-Provide a JSON response with:
-{
-  "pros": ["list of 3-5 main positive points"],
-  "cons": ["list of 3-5 main negative points"],
-  "summary": "2-sentence overall summary"
-}`;
-
-        const result = await this.model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-        
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const insights = JSON.parse(jsonMatch[0]);
-          pros = insights.pros || [];
-          cons = insights.cons || [];
-          summary = insights.summary || '';
+        const insights = this.extractJson(text);
+        if (insights) {
+          pros = Array.isArray(insights.pros) ? insights.pros : [];
+          cons = Array.isArray(insights.cons) ? insights.cons : [];
+          summary = typeof insights.summary === 'string' ? insights.summary : '';
         }
       } catch (error) {
         if (error.status === 429) {
-          console.warn('⚠️  Gemini quota exceeded in review insights. Using basic analysis.');
+          console.warn('⚠️  Perplexity quota exceeded in review insights. Using basic analysis.');
         } else {
           console.error('Review insights generation error:', error);
         }
