@@ -85,8 +85,17 @@ export const apiService = {
     return response.data
   },
 
-  async getPriceHistory(productId, months = 3) {
-    const response = await api.get(`/prices/history/${productId}?months=${months}`)
+  async getPriceHistory(productId, months = 3, marketplace = '') {
+    const params = new URLSearchParams()
+    if (months !== undefined && months !== null) {
+      params.append('months', months)
+    }
+    if (marketplace) {
+      params.append('marketplace', marketplace)
+    }
+
+    const queryString = params.toString()
+    const response = await api.get(`/prices/history/${productId}${queryString ? `?${queryString}` : ''}`)
     return response.data
   },
 

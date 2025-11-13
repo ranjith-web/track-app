@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
+const scraperService = require('../services/scraperService');
+const { parseMarketplaceEnrichmentTargets } = require('../utils/marketplaceConfig');
 
 // Helper function to format price
 const formatPrice = (price) => {
@@ -1097,7 +1099,6 @@ router.post('/:productId/url', async (req, res) => {
     }
 
     // Scrape product info to get current price
-    const scraperService = require('../services/scraperService');
     let productInfo = null;
     let price = null;
 
@@ -1121,22 +1122,73 @@ router.post('/:productId/url', async (req, res) => {
       }
     };
 
+    const priceHistoryEntries = [];
+
     if (price && price > 0) {
       updateData.$set[`currentPrice.${platform}`] = price;
 
       // Add to price history if price is different
       const existingPrice = product.currentPrice?.[platform];
       if (!existingPrice || Math.abs(existingPrice - price) > 1) {
-        updateData.$push = {
-          priceHistory: {
-            price: price,
-            source: platform,
-            availability: productInfo?.availability || 'in_stock',
-            discount: productInfo?.discount || 0,
-            timestamp: new Date()
-          }
-        };
+        priceHistoryEntries.push({
+          price,
+          source: platform,
+          availability: productInfo?.availability || 'in_stock',
+          discount: productInfo?.discount || 0,
+          timestamp: new Date()
+        });
       }
+    }
+
+    const existingUrls = {
+      ...(product.urls?.toObject ? product.urls.toObject() : product.urls || {})
+    };
+    existingUrls[platform] = url;
+
+    const enrichmentTargets = parseMarketplaceEnrichmentTargets().filter(target => target !== platform && !existingUrls[target]);
+    let enrichmentResults = [];
+    const searchName = productInfo?.name || product.name;
+
+    if (searchName && enrichmentTargets.length > 0) {
+      try {
+        enrichmentResults = await scraperService.enrichProductAcrossMarketplaces({
+          productName: searchName,
+          sourceMarketplace: platform,
+          existingUrls,
+          targets: enrichmentTargets,
+          minScore: 0.75
+        });
+      } catch (error) {
+        console.error('⚠️  Cross-market enrichment failed:', error.message);
+      }
+    }
+
+    enrichmentResults.forEach(result => {
+      const { marketplace, url: matchedUrl, scrapedData } = result;
+      if (!scrapedData || !scrapedData.price) return;
+
+      updateData.$set[`urls.${marketplace}`] = matchedUrl;
+      updateData.$set[`currentPrice.${marketplace}`] = scrapedData.price;
+
+      priceHistoryEntries.push({
+        price: scrapedData.price,
+        source: marketplace,
+        availability: scrapedData.availability || 'in_stock',
+        discount: scrapedData.discount || 0,
+        timestamp: new Date()
+      });
+
+      if (!product.image && scrapedData.image && !updateData.$set.image) {
+        updateData.$set.image = scrapedData.image;
+      }
+    });
+
+    if (priceHistoryEntries.length > 0) {
+      updateData.$push = {
+        priceHistory: {
+          $each: priceHistoryEntries
+        }
+      };
     }
 
     // Use updateOne to handle both $set and $push
@@ -1150,7 +1202,16 @@ router.post('/:productId/url', async (req, res) => {
     res.json({
       message: `URL and price added successfully from ${platform}`,
       product: updatedProduct,
-      priceAdded: price !== null
+      priceAdded: price !== null,
+      enrichments: enrichmentResults.length > 0
+        ? enrichmentResults.map(result => ({
+          marketplace: result.marketplace,
+          url: result.url,
+          matchScore: Number((result.score * 100).toFixed(1)),
+          title: result.title,
+          price: result.scrapedData?.price || result.price || null
+        }))
+        : null
     });
   } catch (error) {
     console.error('Add URL error:', error);

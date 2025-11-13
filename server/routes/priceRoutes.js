@@ -3,6 +3,7 @@ const router = express.Router();
 const Product = require('../models/Product');
 const scraperService = require('../services/scraperService');
 const aiService = require('../services/aiService');
+const { parseMarketplaceEnrichmentTargets, canonicalizeMarketplaceName } = require('../utils/marketplaceConfig');
 
 // Track a new product
 router.post('/track', async (req, res) => {
@@ -43,22 +44,59 @@ router.post('/track', async (req, res) => {
       return res.status(400).json({ error: 'Could not extract price information' });
     }
 
+    const urls = {
+      [productInfo.source]: url
+    };
+
+    const currentPrice = {
+      [productInfo.source]: productInfo.price
+    };
+
+    const priceHistory = [{
+      price: productInfo.price,
+      source: productInfo.source,
+      availability: productInfo.availability,
+      discount: productInfo.discount
+    }];
+
+    const enrichmentTargets = parseMarketplaceEnrichmentTargets().filter(target => target !== productInfo.source);
+    let enrichmentResults = [];
+
+    if (productInfo?.name && enrichmentTargets.length > 0) {
+      try {
+        enrichmentResults = await scraperService.enrichProductAcrossMarketplaces({
+          productName: productInfo.name,
+          sourceMarketplace: productInfo.source,
+          existingUrls: urls,
+          targets: enrichmentTargets,
+          minScore: 0.75
+        });
+      } catch (error) {
+        console.error('⚠️  Cross-market enrichment failed:', error.message);
+      }
+    }
+
+    enrichmentResults.forEach(result => {
+      const { marketplace, url: marketUrl, scrapedData } = result;
+      if (!scrapedData || !scrapedData.price) return;
+
+      urls[marketplace] = marketUrl;
+      currentPrice[marketplace] = scrapedData.price;
+      priceHistory.push({
+        price: scrapedData.price,
+        source: marketplace,
+        availability: scrapedData.availability || 'in_stock',
+        discount: scrapedData.discount || 0
+      });
+    });
+
     // Create new product
     const product = new Product({
       name: productInfo.name,
-      image: productInfo.image,
-      urls: {
-        [productInfo.source]: url
-      },
-      currentPrice: {
-        [productInfo.source]: productInfo.price
-      },
-      priceHistory: [{
-        price: productInfo.price,
-        source: productInfo.source,
-        availability: productInfo.availability,
-        discount: productInfo.discount
-      }]
+      image: productInfo.image || enrichmentResults.find(r => r.scrapedData?.image)?.scrapedData?.image || null,
+      urls,
+      currentPrice,
+      priceHistory
     });
 
     await product.save();
@@ -100,11 +138,23 @@ router.post('/track', async (req, res) => {
       }
     });
 
-    res.json({
+    const responsePayload = {
       message: 'Product added for tracking',
       product,
       note: 'AI analysis will be generated automatically in the background'
-    });
+    };
+
+    if (enrichmentResults.length > 0) {
+      responsePayload.enrichments = enrichmentResults.map(result => ({
+        marketplace: result.marketplace,
+        url: result.url,
+        matchScore: Number((result.score * 100).toFixed(1)),
+        title: result.title,
+        price: result.scrapedData?.price || result.price || null
+      }));
+    }
+
+    res.json(responsePayload);
   } catch (error) {
     console.error('Track product error:', error);
     res.status(500).json({
@@ -216,21 +266,34 @@ router.post('/update/:productId', async (req, res) => {
 // Get price history
 router.get('/history/:productId', async (req, res) => {
   try {
-    const { months = 3 } = req.query;
+    const { months = 3, marketplace } = req.query;
     const product = await Product.findById(req.params.productId);
 
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const cutoffDate = new Date();
-    cutoffDate.setMonth(cutoffDate.getMonth() - parseInt(months));
+    const canonicalMarketplace = canonicalizeMarketplaceName(marketplace);
+    const monthsNumber = parseInt(months, 10);
+    const monthsValue = typeof months === 'string' ? months.toLowerCase() : months;
+    const applyCutoff = !Number.isNaN(monthsNumber) && monthsValue !== 'max';
 
-    const priceHistory = product.priceHistory.filter(
-      entry => entry.timestamp >= cutoffDate
-    );
+    let priceHistory = [...product.priceHistory];
+
+    if (canonicalMarketplace) {
+      priceHistory = priceHistory.filter(entry =>
+        canonicalizeMarketplaceName(entry.source) === canonicalMarketplace
+      );
+    }
+
+    if (applyCutoff) {
+      const cutoffDate = new Date();
+      cutoffDate.setMonth(cutoffDate.getMonth() - monthsNumber);
+      priceHistory = priceHistory.filter(entry => entry.timestamp >= cutoffDate);
+    }
 
     res.json({
+      marketplace: canonicalMarketplace || null,
       product: {
         id: product._id,
         name: product.name,

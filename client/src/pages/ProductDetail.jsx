@@ -28,36 +28,77 @@ const ProductDetail = () => {
   const [analysisCached, setAnalysisCached] = useState(false)
   const [insightsCached, setInsightsCached] = useState(false)
   const [timeRange, setTimeRange] = useState('max')
+  const [activeMarketplace, setActiveMarketplace] = useState('')
 
-  useEffect(() => {
-    fetchProductData()
-  }, [id])
+  const marketplaceOrder = ['amazon', 'flipkart', 'myntra', 'reliancedigital']
+  const marketplaceDisplayNames = {
+    amazon: 'Amazon',
+    flipkart: 'Flipkart',
+    myntra: 'Myntra',
+    reliancedigital: 'Reliance Digital'
+  }
 
-  const fetchProductData = async () => {
+  const formatMarketplaceName = (marketplace) => {
+    if (!marketplace) return ''
+    return marketplaceDisplayNames[marketplace] || marketplace.charAt(0).toUpperCase() + marketplace.slice(1)
+  }
+
+  const detectPrimaryMarketplace = (product) => {
+    if (!product) return ''
+    for (const marketplace of marketplaceOrder) {
+      if (product.urls?.[marketplace]) {
+        return marketplace
+      }
+    }
+    for (const marketplace of marketplaceOrder) {
+      if (product.currentPrice?.[marketplace]) {
+        return marketplace
+      }
+    }
+    if (product.priceHistory && product.priceHistory.length > 0) {
+      return product.priceHistory[product.priceHistory.length - 1].source || ''
+    }
+    return ''
+  }
+
+  const loadPriceHistory = async (marketplace, { silent = false } = {}) => {
+    if (!marketplace) return null
+    try {
+      const response = await apiService.getPriceHistory(id, 'max', marketplace)
+      setActiveMarketplace(response.marketplace || marketplace)
+      setPriceHistory(response.product?.priceHistory || [])
+      return response
+    } catch (error) {
+      console.error(`Error fetching ${marketplace} price history:`, error)
+      if (!silent) {
+        toast.error(`Failed to load ${formatMarketplaceName(marketplace)} price history`)
+      }
+      return null
+    }
+  }
+
+  const fetchProductData = async (preferredMarketplace = '') => {
     try {
       setLoading(true)
-      const [productResponse, historyResponse] = await Promise.all([
-        apiService.getProduct(id),
-        apiService.getPriceHistory(id)
-      ])
-      
+      const productResponse = await apiService.getProduct(id)
       setProduct(productResponse.product)
-      setPriceHistory(historyResponse.product?.priceHistory || [])
-      
-      // Automatically load AI analysis and insights
-      const priceHistory = historyResponse.product?.priceHistory || []
-      
-      // Load AI analysis for any product with price history
-      if (priceHistory.length >= 1) {
-        handleAnalyzePrice(true) // Pass true to indicate auto-load
+
+      const detectedMarketplace =
+        preferredMarketplace || detectPrimaryMarketplace(productResponse.product)
+      const historyResponse = await loadPriceHistory(detectedMarketplace, { silent: true })
+      if (!historyResponse && detectedMarketplace) {
+        setActiveMarketplace(detectedMarketplace)
+        setPriceHistory([])
+      }
+      const historyEntries = historyResponse?.product?.priceHistory || []
+
+      if (historyEntries.length >= 1) {
+        handleAnalyzePrice(true)
       } else if (productResponse.product?.aiAnalysis) {
-        // Use existing analysis if available
         setAiAnalysis(productResponse.product.aiAnalysis)
       }
-      
-      // Load buying insights automatically
-      handleGetInsights(true) // Pass true to indicate auto-load
-      
+
+      handleGetInsights(true)
     } catch (error) {
       console.error('Error fetching product data:', error)
       toast.error('Failed to load product details')
@@ -65,6 +106,11 @@ const ProductDetail = () => {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    fetchProductData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
 
   const handleUpdatePrice = async () => {
     try {
@@ -96,7 +142,7 @@ const ProductDetail = () => {
         toast.success('Price updated successfully!')
       }
       
-      fetchProductData() // Refresh data
+      await fetchProductData(activeMarketplace)
     } catch (error) {
       console.error('Error updating price:', error)
       toast.error('Failed to update price')
@@ -252,7 +298,18 @@ const ProductDetail = () => {
   }
 
   const lowestPrice = getLowestPrice(product.currentPrice)
-  const priceSources = getPriceSources(product.currentPrice)
+  const priceComparisonEntries = (product.currentPrice
+    ? Object.entries(product.currentPrice)
+        .filter(([, price]) => price && price > 0)
+        .map(([source, price]) => ({
+          source,
+          price,
+          url: product.urls?.[source]
+        }))
+        .sort((a, b) => a.price - b.price)
+    : [])
+  const bestPriceEntry = priceComparisonEntries[0] || null
+  const highestPriceEntry = priceComparisonEntries.length > 0 ? priceComparisonEntries[priceComparisonEntries.length - 1] : null
   const chartData = formatPriceHistory(priceHistory, timeRange)
   
 
@@ -297,29 +354,96 @@ const ProductDetail = () => {
               </div>
             )}
 
-            {priceSources.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Available on:</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {priceSources.map(({ source, price }) => (
-                    <div key={source} className="border rounded-lg p-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium capitalize">{source}</span>
-                        <span className="text-lg font-bold text-green-600">
-                          ₹{price.toLocaleString()}
-                        </span>
-                      </div>
-                      <a
-                        href={product.urls?.[source]}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm mt-2"
+            {priceComparisonEntries.length > 0 && (
+              <div className="mb-6 bg-gradient-to-br from-blue-50 via-white to-indigo-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      Compare {priceComparisonEntries.length} Marketplace{priceComparisonEntries.length > 1 ? 's' : ''}
+                    </h3>
+                    {bestPriceEntry && (
+                      <p className="text-sm text-gray-600 mt-1">
+                        Best price currently on <span className="font-medium">{formatMarketplaceName(bestPriceEntry.source)}</span>
+                        {highestPriceEntry && highestPriceEntry.price !== bestPriceEntry.price && (
+                          <>
+                            , saving ₹{(highestPriceEntry.price - bestPriceEntry.price).toLocaleString()}
+                          </>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  {bestPriceEntry && (
+                    <span className="inline-flex items-center text-xs font-semibold bg-green-100 text-green-700 px-3 py-1 rounded-full">
+                      Best Price · ₹{bestPriceEntry.price.toLocaleString()}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {priceComparisonEntries.map((entry) => {
+                    const isActive = activeMarketplace === entry.source
+                    const isBest = bestPriceEntry && entry.source === bestPriceEntry.source
+                    return (
+                      <div
+                        key={entry.source}
+                        className={`rounded-lg border transition-all duration-200 ${
+                          isBest
+                            ? 'border-green-400 bg-white shadow'
+                            : isActive
+                            ? 'border-blue-400 bg-white'
+                            : 'border-gray-200 bg-white'
+                        }`}
                       >
-                        <ExternalLink className="w-4 h-4 mr-1" />
-                        Visit Store
-                      </a>
-                    </div>
-                  ))}
+                        <div className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                                  {formatMarketplaceName(entry.source)}
+                                </span>
+                                {isBest && (
+                                  <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">
+                                    Best
+                                  </span>
+                                )}
+                                {isActive && (
+                                  <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
+                                    Viewing
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-2xl font-bold text-gray-900 mt-2">
+                                ₹{entry.price.toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-2">
+                              <a
+                                href={entry.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm font-medium"
+                              >
+                                <ExternalLink className="w-4 h-4 mr-1" />
+                                Visit
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => loadPriceHistory(entry.source)}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                              >
+                                {isActive ? 'Showing history' : 'View history'}
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-3 text-xs text-gray-500">
+                            {isBest
+                              ? 'Lowest price across tracked marketplaces'
+                              : `₹${(entry.price - bestPriceEntry.price).toLocaleString()} more than best`}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -530,6 +654,11 @@ const ProductDetail = () => {
           <h2 className="text-xl font-bold text-gray-900 flex items-center">
             <BarChart3 className="w-6 h-6 mr-2 text-blue-600" />
             Price History
+            {activeMarketplace && (
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                ({formatMarketplaceName(activeMarketplace)})
+              </span>
+            )}
           </h2>
           
           {/* Time Range Selector */}
@@ -630,11 +759,14 @@ const ProductDetail = () => {
           <div className="text-center py-12 bg-blue-50 rounded-lg">
             <Calendar className="w-16 h-16 text-blue-400 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Building Price History...
+              {activeMarketplace
+                ? `No ${formatMarketplaceName(activeMarketplace)} history yet`
+                : 'Building Price History...'}
             </h3>
             <p className="text-gray-600 mb-4 max-w-md mx-auto">
-              We're tracking this product's price automatically 3 times a day. 
-              Historical data will appear here as we collect more price points over time.
+              {activeMarketplace
+                ? `We'll start charting ${formatMarketplaceName(activeMarketplace)} prices as soon as we collect a few data points.`
+                : "We're tracking this product's price automatically 3 times a day. Historical data will appear here as we collect more price points over time."}
             </p>
             <div className="text-sm text-gray-500">
               <p>📊 Price checks: 8:00 AM, 2:00 PM, 8:00 PM IST</p>

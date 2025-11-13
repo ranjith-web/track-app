@@ -8,7 +8,7 @@ if (typeof globalThis.File === 'undefined') {
       this.lastModified = options.lastModified || Date.now();
       this._chunks = chunks;
     }
-    
+
     stream() {
       return new ReadableStream({
         start(controller) {
@@ -19,22 +19,24 @@ if (typeof globalThis.File === 'undefined') {
         }
       });
     }
-    
+
     arrayBuffer() {
       return Promise.resolve(Buffer.concat(this._chunks));
     }
-    
+
     text() {
       return Promise.resolve(Buffer.concat(this._chunks).toString());
     }
   };
 }
 
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-require('dotenv').config();
 
 const connectDB = require('./config/database');
 const priceRoutes = require('./routes/priceRoutes');
@@ -61,17 +63,17 @@ app.use(limiter);
 // CORS configuration
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [
-      process.env.FRONTEND_URL || 'https://your-app.vercel.app',
-      'https://your-app.vercel.app',
-      'https://your-custom-domain.com' // Add your custom domain if you have one
-    ]
+    process.env.FRONTEND_URL || 'https://your-app.vercel.app',
+    'https://your-app.vercel.app',
+    'https://your-custom-domain.com' // Add your custom domain if you have one
+  ]
   : ['http://localhost:5173', 'http://localhost:3000'];
 
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
+
     if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
       callback(null, true);
     } else {
@@ -109,7 +111,7 @@ app.get('/api/health', (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
@@ -123,10 +125,10 @@ app.use('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  
+
   // Start automated price tracking
   priceTrackerService.startTracking();
-  
+
   // Start cache cleanup interval (every 10 minutes)
   setInterval(() => {
     const requestQueue = require('./services/requestQueue');

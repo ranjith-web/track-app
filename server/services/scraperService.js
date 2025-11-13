@@ -2,6 +2,48 @@ const { chromium } = require('playwright');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const requestQueue = require('./requestQueue');
+const {
+  canonicalizeMarketplaceName,
+  SEARCH_SUPPORTED_MARKETPLACES
+} = require('../utils/marketplaceConfig');
+
+const normalizeTextForMatch = (text = '') => {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+};
+
+const calculateNameSimilarity = (targetName = '', candidateName = '') => {
+  const targetTokens = new Set(normalizeTextForMatch(targetName));
+  const candidateTokens = new Set(normalizeTextForMatch(candidateName));
+
+  if (targetTokens.size === 0 || candidateTokens.size === 0) {
+    return 0;
+  }
+
+  let intersectionCount = 0;
+  targetTokens.forEach(token => {
+    if (candidateTokens.has(token)) {
+      intersectionCount += 1;
+    }
+  });
+
+  // Use Sørensen–Dice coefficient for better balance
+  return (2 * intersectionCount) / (targetTokens.size + candidateTokens.size);
+};
+
+const MARKETPLACE_SEARCH_HANDLERS = {
+  amazon: {
+    searchMethod: 'searchAmazonListings',
+    scrapeMethod: 'scrapeAmazon'
+  },
+  flipkart: {
+    searchMethod: 'searchFlipkartListings',
+    scrapeMethod: 'scrapeFlipkart'
+  }
+};
 
 class ScraperService {
   constructor() {
@@ -375,6 +417,252 @@ class ScraperService {
     });
   }
 
+  async searchAmazonListings(productName, options = {}) {
+    return await this.withRetry(async () => {
+      const browser = await this.initBrowser();
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport: { width: 1366, height: 768 }
+      });
+      const page = await context.newPage();
+
+      const searchUrl = `https://www.amazon.in/s?k=${encodeURIComponent(productName)}`;
+      const maxResults = options.limit || 10;
+
+      try {
+        console.log(`🔍 Searching Amazon for "${productName}"`);
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(4000);
+
+        const listings = await page.evaluate((limit) => {
+          const cards = Array.from(document.querySelectorAll('div[data-component-type="s-search-result"]')).slice(0, limit * 2);
+          const results = [];
+          const seenUrls = new Set();
+
+          const extractCanonicalUrl = (href) => {
+            if (!href) return null;
+            try {
+              const url = new URL(href, 'https://www.amazon.in');
+              // Keep /dp/ASIN structure
+              const dpMatch = url.pathname.match(/\/dp\/([A-Z0-9]{10})/i);
+              if (dpMatch) {
+                return `https://www.amazon.in/dp/${dpMatch[1]}`;
+              }
+              return url.href.split('?')[0];
+            } catch (error) {
+              return href.startsWith('http') ? href : `https://www.amazon.in${href}`;
+            }
+          };
+
+          cards.forEach(card => {
+            const titleElement =
+              card.querySelector('span.a-size-medium') ||
+              card.querySelector('span.a-size-base-plus') ||
+              card.querySelector('h2 a span');
+
+            const linkElement = card.querySelector('h2 a');
+            if (!linkElement) return;
+
+            const href = linkElement.getAttribute('href');
+            const url = extractCanonicalUrl(href);
+            if (!url || seenUrls.has(url)) return;
+            seenUrls.add(url);
+
+            const priceWhole = card.querySelector('span.a-price-whole');
+            const priceFraction = card.querySelector('span.a-price-fraction');
+            let price = null;
+            if (priceWhole) {
+              const priceText = `${priceWhole.textContent || ''}${priceFraction ? `.${priceFraction.textContent}` : ''}`.replace(/[^\d.]/g, '');
+              if (priceText) {
+                price = parseFloat(priceText);
+              }
+            }
+
+            const title = titleElement?.textContent?.trim();
+            if (title) {
+              results.push({
+                title,
+                url,
+                price
+              });
+            }
+          });
+
+          return results.slice(0, limit);
+        }, maxResults);
+
+        await context.close();
+        console.log(`🧭 Amazon search returned ${listings.length} candidates`);
+        return listings;
+      } catch (error) {
+        await context.close().catch(() => { });
+        throw error;
+      }
+    });
+  }
+
+  async searchFlipkartListings(productName, options = {}) {
+    return await this.withRetry(async () => {
+      const browser = await this.initBrowser();
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport: { width: 1366, height: 768 }
+      });
+      const page = await context.newPage();
+
+      const searchUrl = `https://www.flipkart.com/search?q=${encodeURIComponent(productName)}`;
+      const maxResults = options.limit || 10;
+
+      try {
+        console.log(`🔍 Searching Flipkart for "${productName}"`);
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(4000);
+
+        // Close login popup if it appears
+        try {
+          await page.click('button[class*="_2KpZ6l _2doB4z"], button._2KpZ6l._2doB4z', { timeout: 2000 });
+        } catch (e) {
+          // Ignore if popup not present
+        }
+
+        const listings = await page.evaluate((limit) => {
+          const cards = Array.from(document.querySelectorAll('div[data-id]')).slice(0, limit * 2);
+          const uniqueResults = [];
+          const seenUrls = new Set();
+
+          cards.forEach(card => {
+            const linkElement = card.querySelector('a[href*="/p/"]');
+            if (!linkElement) {
+              return;
+            }
+
+            const href = linkElement.getAttribute('href');
+            if (!href) {
+              return;
+            }
+
+            const url = href.startsWith('http') ? href : `https://www.flipkart.com${href.split('?')[0]}`;
+            if (seenUrls.has(url)) {
+              return;
+            }
+            seenUrls.add(url);
+
+            const titleElement =
+              card.querySelector('.KzDlHZ') ||
+              card.querySelector('div[title]') ||
+              card.querySelector('.wjcEIp') ||
+              card.querySelector('.IRpwTa') ||
+              card.querySelector('a');
+
+            const priceElement =
+              card.querySelector('.Nx9bqj') ||
+              card.querySelector('._30jeq3') ||
+              card.querySelector('[class*="price"]');
+
+            const title = titleElement?.textContent?.trim() || linkElement.getAttribute('title') || '';
+            const priceText = priceElement?.textContent?.replace(/[^\d.]/g, '');
+            const price = priceText ? parseFloat(priceText) : null;
+
+            if (title) {
+              uniqueResults.push({
+                title,
+                url,
+                price
+              });
+            }
+          });
+
+          return uniqueResults.slice(0, limit);
+        }, maxResults);
+
+        await context.close();
+        console.log(`🧭 Flipkart search returned ${listings.length} candidates`);
+        return listings;
+      } catch (error) {
+        await context.close().catch(() => { });
+        throw error;
+      }
+    });
+  }
+
+  async findMarketplaceMatchByName(marketplace, productName, options = {}) {
+    const minScore = options.minScore ?? 0.75;
+    const searchLimit = options.limit ?? 10;
+    const canonicalMarketplace = canonicalizeMarketplaceName(marketplace);
+
+    if (!canonicalMarketplace || !this.supportsMarketplaceSearch(canonicalMarketplace)) {
+      console.log(`⚠️  Marketplace search not supported for "${marketplace}"`);
+      return null;
+    }
+
+    const handler = MARKETPLACE_SEARCH_HANDLERS[canonicalMarketplace];
+    if (!handler) {
+      return null;
+    }
+
+    const searchMethod = handler.searchMethod;
+    const scrapeMethod = handler.scrapeMethod;
+
+    if (typeof this[searchMethod] !== 'function' || typeof this[scrapeMethod] !== 'function') {
+      console.log(`⚠️  Search or scrape method missing for marketplace ${canonicalMarketplace}`);
+      return null;
+    }
+
+    try {
+      const candidates = await this[searchMethod](productName, { limit: searchLimit });
+      if (!candidates || candidates.length === 0) {
+        console.log(`⚠️  No ${canonicalMarketplace} listings found for`, productName);
+        return null;
+      }
+
+      let bestMatch = null;
+
+      candidates.forEach(candidate => {
+        const score = calculateNameSimilarity(productName, candidate.title);
+        console.log(`   • ${canonicalMarketplace} candidate "${candidate.title}" scored ${(score * 100).toFixed(1)}%`);
+        if (score >= minScore && (!bestMatch || score > bestMatch.score)) {
+          bestMatch = {
+            ...candidate,
+            score
+          };
+        }
+      });
+
+      if (!bestMatch) {
+        console.log(`⚠️  No ${canonicalMarketplace} candidates met the ${(minScore * 100)}% similarity threshold`);
+        return null;
+      }
+
+      console.log(`✅ ${canonicalMarketplace} best match "${bestMatch.title}" with score ${(bestMatch.score * 100).toFixed(1)}%`);
+
+      try {
+        const scrapedData = await this[scrapeMethod](bestMatch.url);
+        return {
+          marketplace: canonicalMarketplace,
+          url: bestMatch.url,
+          score: bestMatch.score,
+          title: bestMatch.title,
+          price: bestMatch.price,
+          scrapedData
+        };
+      } catch (error) {
+        console.error(`⚠️  Failed to scrape matched ${canonicalMarketplace} product:`, error.message);
+        return {
+          marketplace: canonicalMarketplace,
+          url: bestMatch.url,
+          score: bestMatch.score,
+          title: bestMatch.title,
+          price: bestMatch.price,
+          scrapedData: null,
+          error: error.message
+        };
+      }
+    } catch (error) {
+      console.error(`🔁 ${canonicalMarketplace} search error:`, error.message);
+      return null;
+    }
+  }
+
   async scrapeMyntra(url) {
     return await this.withRetry(async () => {
       const browser = await this.initBrowser();
@@ -668,6 +956,51 @@ class ScraperService {
       console.error('Review scraping error:', error);
       return [];
     }
+  }
+
+  supportsMarketplaceSearch(marketplace) {
+    const canonical = canonicalizeMarketplaceName(marketplace);
+    return canonical && SEARCH_SUPPORTED_MARKETPLACES.has(canonical) && Boolean(MARKETPLACE_SEARCH_HANDLERS[canonical]);
+  }
+
+  async enrichProductAcrossMarketplaces(options = {}) {
+    const {
+      productName,
+      sourceMarketplace,
+      existingUrls = {},
+      targets = [],
+      minScore = 0.75,
+      searchLimit = 10
+    } = options;
+
+    if (!productName) {
+      return [];
+    }
+
+
+    const canonicalSource = canonicalizeMarketplaceName(sourceMarketplace);
+    const enrichments = [];
+
+    console.log("targets---->", targets)
+
+    for (const target of targets) {
+      const canonicalTarget = canonicalizeMarketplaceName(target);
+      if (!canonicalTarget) continue;
+      if (canonicalTarget === canonicalSource) continue;
+      if (existingUrls[canonicalTarget]) continue;
+      if (!this.supportsMarketplaceSearch(canonicalTarget)) continue;
+
+      try {
+        const match = await this.findMarketplaceMatchByName(canonicalTarget, productName, { minScore, limit: searchLimit });
+        if (match && match.scrapedData && match.scrapedData.price) {
+          enrichments.push(match);
+        }
+      } catch (error) {
+        console.error(`⚠️  Enrichment failed for ${canonicalTarget}:`, error.message);
+      }
+    }
+
+    return enrichments;
   }
 
 }
