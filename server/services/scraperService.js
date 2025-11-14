@@ -144,7 +144,7 @@ class ScraperService {
       const page = await context.newPage();
 
       try {
-        console.log(`🔍 Scraping Flipkart: ${url}`);
+        // console.log(`🔍 Scraping Flipkart: ${url}`);
 
         // Set extra headers to appear more like a real browser
         await page.setExtraHTTPHeaders({
@@ -159,7 +159,7 @@ class ScraperService {
 
         // Check if we were redirected or blocked
         const currentUrl = page.url();
-        console.log(`📍 Current URL after navigation: ${currentUrl}`);
+        // console.log(`📍 Current URL after navigation: ${currentUrl}`);
 
         // Check if URL is correct product page
         if (!currentUrl.includes('/p/') && !currentUrl.includes('/product/')) {
@@ -172,7 +172,7 @@ class ScraperService {
 
         // Check page title to see if we're on the right page
         const pageTitle = await page.title();
-        console.log(`📄 Page title: ${pageTitle}`);
+        // console.log(`📄 Page title: ${pageTitle}`);
 
         // Check if we're on homepage or wrong page
         if (pageTitle.includes('Online Shopping') && !pageTitle.includes('Buy') && !currentUrl.includes('/p/')) {
@@ -204,14 +204,14 @@ class ScraperService {
           };
         });
 
-        console.log('📊 Page Analysis:');
-        console.log('   URL:', pageInfo.url);
-        console.log('   Title:', pageInfo.title);
-        console.log('   Is Product Page:', pageInfo.isProductPage);
-        console.log('   Has Price Symbol:', pageInfo.hasPrice);
-        console.log('   Has Title Element:', pageInfo.hasTitle);
-        console.log('   Has Product Elements:', pageInfo.hasProductElements);
-        console.log('   Body Text Length:', pageInfo.bodyTextLength);
+        // console.log('📊 Page Analysis:');
+        // console.log('   URL:', pageInfo.url);
+        // console.log('   Title:', pageInfo.title);
+        // console.log('   Is Product Page:', pageInfo.isProductPage);
+        // console.log('   Has Price Symbol:', pageInfo.hasPrice);
+        // console.log('   Has Title Element:', pageInfo.hasTitle);
+        // console.log('   Has Product Elements:', pageInfo.hasProductElements);
+        // console.log('   Body Text Length:', pageInfo.bodyTextLength);
 
         if (!pageInfo.isProductPage) {
           console.error('❌ Not on a product page - URL structure might be wrong');
@@ -261,13 +261,13 @@ class ScraperService {
             page.waitForSelector('._30jeq3', { timeout: 5000 })
           ]);
         } catch (e) {
-          console.log('⚠️ Key selectors not found, will try fallback methods');
+          // console.log('⚠️ Key selectors not found, will try fallback methods');
         }
 
         const productData = await page.evaluate(() => {
-          console.log('🔍 Starting Flipkart evaluation...');
-          console.log('Page URL:', window.location.href);
-          console.log('Page title:', document.title);
+          // console.log('🔍 Starting Flipkart evaluation...');
+          // console.log('Page URL:', window.location.href);
+          // console.log('Page title:', document.title);
 
           // Debug: Log all elements with class containing "B_NuCI" or price-related classes
           const debugElements = {
@@ -282,8 +282,8 @@ class ScraperService {
               text: el.textContent?.substring(0, 50)
             }))
           };
-          console.log('🔍 Debug - Title elements found:', debugElements.titleElements.length);
-          console.log('🔍 Debug - Price elements found:', debugElements.priceElements.length);
+          // console.log('🔍 Debug - Title elements found:', debugElements.titleElements.length);
+          // console.log('🔍 Debug - Price elements found:', debugElements.priceElements.length);
 
           // Try to extract from window object (Flipkart sometimes stores data here)
           let title = null;
@@ -313,7 +313,7 @@ class ScraperService {
               }
             }
           } catch (e) {
-            console.log('⚠️ Error accessing window state:', e.message);
+            // console.log('⚠️ Error accessing window state:', e.message);
           }
 
           // Try multiple selectors for title
@@ -334,7 +334,7 @@ class ScraperService {
               const element = document.querySelector(selector);
               if (element?.textContent?.trim()) {
                 title = element.textContent.trim();
-                console.log(`✅ Found title with selector: ${selector}`);
+                // console.log(`✅ Found title with selector: ${selector}`);
                 break;
               }
             }
@@ -349,14 +349,14 @@ class ScraperService {
                   const data = JSON.parse(script.textContent);
                   if (data.offers?.price) {
                     price = parseFloat(data.offers.price);
-                    console.log(`✅ Found price in JSON-LD: ${price}`);
+                    // console.log(`✅ Found price in JSON-LD: ${price}`);
                     break;
                   }
                   if (data.offers && Array.isArray(data.offers)) {
                     for (const offer of data.offers) {
                       if (offer.price) {
                         price = parseFloat(offer.price);
-                        console.log(`✅ Found price in JSON-LD offers array: ${price}`);
+                        // console.log(`✅ Found price in JSON-LD offers array: ${price}`);
                         break;
                       }
                     }
@@ -365,7 +365,7 @@ class ScraperService {
                     for (const item of data) {
                       if (item.offers?.price) {
                         price = parseFloat(item.offers.price);
-                        console.log(`✅ Found price in JSON-LD array: ${price}`);
+                        // console.log(`✅ Found price in JSON-LD array: ${price}`);
                         break;
                       }
                     }
@@ -375,7 +375,7 @@ class ScraperService {
                 }
               }
             } catch (e) {
-              console.log('⚠️ Error parsing JSON-LD:', e.message);
+              // console.log('⚠️ Error parsing JSON-LD:', e.message);
             }
           }
 
@@ -405,7 +405,7 @@ class ScraperService {
                 const priceText = priceElement.textContent.replace(/[^\d.]/g, '');
                 if (priceText && !isNaN(parseFloat(priceText)) && parseFloat(priceText) > 100) {
                   price = parseFloat(priceText);
-                  console.log(`✅ Found price with selector: ${selector}, value: ${price}`);
+                  // console.log(`✅ Found price with selector: ${selector}, value: ${price}`);
                   break;
                 }
               }
@@ -414,7 +414,7 @@ class ScraperService {
 
           // If no price found with selectors, try to find price in text content
           if (!price) {
-            console.log('🔍 Trying to find price in text content...');
+            // console.log('🔍 Trying to find price in text content...');
             const allText = document.body.innerText || document.body.textContent || '';
             const pricePatterns = [
               /₹[\s]*(\d{1,3}(?:,\d{2,3})*(?:\.\d{2})?)/g,
@@ -437,7 +437,7 @@ class ScraperService {
 
                 if (validPrices.length > 0) {
                   price = validPrices[0].priceValue;
-                  console.log(`✅ Found price in text: ${validPrices[0].match} -> ${price}`);
+                  // console.log(`✅ Found price in text: ${validPrices[0].match} -> ${price}`);
                   break;
                 }
               }
@@ -468,7 +468,7 @@ class ScraperService {
                 image = imgElement.src;
                 // Clean up image URL
                 image = image.split('?')[0]; // Remove query params
-                console.log(`✅ Found image with selector: ${selector}`);
+                // console.log(`✅ Found image with selector: ${selector}`);
                 break;
               }
             }
@@ -476,14 +476,14 @@ class ScraperService {
 
           // If no image found with selectors, try to get from JSON-LD structured data
           if (!image) {
-            console.log('🔍 Trying to find image in JSON-LD structured data...');
+            // console.log('🔍 Trying to find image in JSON-LD structured data...');
             const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
             for (const script of jsonLdScripts) {
               try {
                 const data = JSON.parse(script.textContent);
                 if (data.image) {
                   image = data.image;
-                  console.log(`✅ Found image in JSON-LD: ${image}`);
+                  // console.log(`✅ Found image in JSON-LD: ${image}`);
                   break;
                 }
                 // Handle array of structured data
@@ -491,7 +491,7 @@ class ScraperService {
                   for (const item of data) {
                     if (item.image) {
                       image = item.image;
-                      console.log(`✅ Found image in JSON-LD array: ${image}`);
+                      // console.log(`✅ Found image in JSON-LD array: ${image}`);
                       break;
                     }
                   }
@@ -519,7 +519,7 @@ class ScraperService {
               if (text.includes('out') || text.includes('unavailable')) {
                 availability = 'out_of_stock';
               }
-              console.log(`✅ Found availability with selector: ${selector}, value: ${text}`);
+              // console.log(`✅ Found availability with selector: ${selector}, value: ${text}`);
               break;
             }
           }
@@ -539,13 +539,13 @@ class ScraperService {
               const discountText = element.textContent.replace(/[^\d]/g, '');
               if (discountText && !isNaN(parseInt(discountText))) {
                 discount = parseInt(discountText);
-                console.log(`✅ Found discount with selector: ${selector}, value: ${discount}`);
+                // console.log(`✅ Found discount with selector: ${selector}, value: ${discount}`);
                 break;
               }
             }
           }
 
-          console.log('🔍 Flipkart evaluation result:', { title, price, image, availability, discount });
+          // console.log('🔍 Flipkart evaluation result:', { title, price, image, availability, discount });
 
           return {
             title,
@@ -556,7 +556,7 @@ class ScraperService {
           };
         });
 
-        console.log('🔍 Flipkart scraping result:', productData);
+        // console.log('🔍 Flipkart scraping result:', productData);
 
         // Don't throw error if price is missing - return product with null price
         // This allows the product to be saved and price can be updated later
@@ -567,9 +567,9 @@ class ScraperService {
 
         // Log image extraction details
         if (productData.image) {
-          console.log('✅ Image extracted successfully:', productData.image);
+          // console.log('✅ Image extracted successfully:', productData.image);
         } else {
-          console.log('⚠️ No image found during scraping');
+          // console.log('⚠️ No image found during scraping');
         }
 
         await context.close();
@@ -730,7 +730,7 @@ class ScraperService {
       const page = await context.newPage();
 
       try {
-        console.log(`🔍 Scraping Reliance Digital: ${url}`);
+        // console.log(`🔍 Scraping Reliance Digital: ${url}`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(3000);
 
@@ -988,7 +988,7 @@ class ScraperService {
       } else if (url.includes('flipkart.')) {
         return await this.scrapeFlipkartReviews(url, maxReviews);
       } else {
-        console.log('Reviews not supported for this platform yet');
+        // console.log('Reviews not supported for this platform yet');
         return [];
       }
     } catch (error) {
@@ -1011,7 +1011,7 @@ class ScraperService {
 
       try {
         const searchUrl = `https://www.amazon.in/s?k=${encodeURIComponent(productName)}`;
-        console.log(`🔍 Searching Amazon for: ${productName}`);
+        // console.log(`🔍 Searching Amazon for: ${productName}`);
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(3000);
 
@@ -1043,7 +1043,7 @@ class ScraperService {
         }, limit);
 
         await context.close();
-        console.log(`✅ Found ${results.length} Amazon results`);
+        // console.log(`✅ Found ${results.length} Amazon results`);
         return results;
       } catch (error) {
         console.error('❌ Amazon search error:', error.message);
@@ -1067,39 +1067,39 @@ class ScraperService {
 
       try {
         const searchUrl = `https://www.flipkart.com/search?q=${encodeURIComponent(productName)}`;
-        console.log(`🔍 Searching Flipkart for: ${productName}`);
-        console.log(`   URL: ${searchUrl}`);
+        // console.log(`🔍 Searching Flipkart for: ${productName}`);
+        // console.log(`   URL: ${searchUrl}`);
 
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        console.log(`✅ Page loaded: ${page.url()}`);
+        // console.log(`✅ Page loaded: ${page.url()}`);
 
         await page.waitForTimeout(5000);
 
         // Close login popup if present
         try {
           await page.click('button._2KpZ6l._2doB4z, button._2KpZ6l', { timeout: 2000 });
-          console.log('✅ Closed login popup');
+          // console.log('✅ Closed login popup');
           await page.waitForTimeout(1000);
         } catch (e) {
-          console.log('ℹ️  No login popup found');
+          // console.log('ℹ️  No login popup found');
         }
 
         // Wait for search results to load
         try {
           await page.waitForSelector('.DOjaWF, div[class*="DOjaWF"], div[data-id]', { timeout: 10000 });
-          console.log('✅ Search results loaded');
+          // console.log('✅ Search results loaded');
         } catch (e) {
           console.warn('⚠️  Search results selector not found, will try anyway');
         }
 
-        console.log('🔍 Starting page evaluation...');
+        // console.log('🔍 Starting page evaluation...');
         let results;
         try {
           // First, check if we can access the page
           const pageTitle = await page.title();
           const pageUrl = page.url();
-          console.log(`   Page title: ${pageTitle}`);
-          console.log(`   Page URL: ${pageUrl}`);
+          // console.log(`   Page title: ${pageTitle}`);
+          // console.log(`   Page URL: ${pageUrl}`);
 
           // Check if we're on the right page (not redirected)
           if (!pageUrl.includes('flipkart.com/search')) {
@@ -1253,24 +1253,14 @@ class ScraperService {
 
               // If it's already a full URL
               if (href.startsWith('http')) {
-                debug.steps.push(`  called in 1112213`);
 
                 // Remove query parameters and fragments, but keep the path
                 const urlObj = new URL(href);
                 url = `${urlObj.origin}${urlObj.pathname}`;
               } else {
-                // Relative URL - clean it up
-                // href = href.split('?')[0].split('#')[0]; // Remove query params and fragments
-
-                // // Ensure it starts with /
-                // if (!href.startsWith('/')) {
-                //   href = '/' + href;
-                // }
-
                 debug.steps.push(`  Card ${index + 1}: href refactored ${href}`);
                 // Check if it's a product page URL
                 if (href.includes('/p/') || href.includes('/product/')) {
-                  debug.steps.push(`  Called in abcded`);
                   url = `https://www.flipkart.com${href}`;
                 } else {
                   // Skip if it doesn't look like a product URL
@@ -1312,25 +1302,24 @@ class ScraperService {
 
           // Log debug information
           if (results && results.debug) {
-            console.log('📊 Page evaluation debug:');
-            results.debug.steps.forEach(step => console.log(`   ${step}`));
-            console.log(`✅ Found ${results.products.length} products`);
+            // results.debug.steps.forEach(step => console.log(`   ${step}`));
+            // console.log(`✅ Found ${results.products.length} products`);
             results = results.products;
           } else {
-            console.log(`✅ Page evaluation completed, found ${results?.length || 0} results`);
+            // console.log(`✅ Page evaluation completed, found ${results?.length || 0} results`);
           }
         } catch (evalError) {
           console.error('❌ Error in page.evaluate():', evalError);
           // Try to get page content for debugging
           const pageContent = await page.content();
-          console.log(`   Page URL: ${page.url()}`);
-          console.log(`   Page title: ${await page.title()}`);
-          console.log(`   Page content length: ${pageContent.length}`);
+          // console.log(`   Page URL: ${page.url()}`);
+          // console.log(`   Page title: ${await page.title()}`);
+          // console.log(`   Page content length: ${pageContent.length}`);
           throw evalError;
         }
 
         await context.close();
-        console.log(`✅ Found ${results.length} Flipkart results`);
+        // console.log(`✅ Found ${results.length} Flipkart results`);
         return results;
       } catch (error) {
         console.error('❌ Flipkart search error:', error.message);
@@ -1353,40 +1342,166 @@ class ScraperService {
       const page = await context.newPage();
 
       try {
-        const searchUrl = `https://www.reliancedigital.in/search?q=${encodeURIComponent(productName)}:relevance`;
-        console.log(`🔍 Searching Reliance Digital for: ${productName}`);
-        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForTimeout(3000);
+        // console.log(`🔍 Searching Reliance Digital for: ${productName} via onsite search`);
 
-        const results = await page.evaluate((maxResults) => {
+        await page.goto('https://www.reliancedigital.in/', {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000
+        });
+
+        // Focus the global search box ("Search Products & Brands")
+        try {
+          await page.waitForSelector('input[placeholder*="Search Products & Brands"]', { timeout: 8000 });
+        } catch (error) {
+          console.warn('⚠️  Reliance Digital search input not immediately available, retrying after short wait');
+        }
+
+        const searchInput = await page.$('input[placeholder*="Search Products & Brands"]');
+        if (!searchInput) {
+          throw new Error('Reliance Digital search input not found');
+        }
+
+        await searchInput.fill('');
+        await searchInput.type(productName, { delay: 50 });
+        await searchInput.press('Enter');
+
+        // Wait for results page to load
+        await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => { });
+        await page.waitForTimeout(2000);
+
+        // Wait for either product cards or a "no results" indicator
+        const waitForResults = async () => {
+          await Promise.race([
+            page.waitForSelector('.main-grid .product-card', { timeout: 12000 }),
+            page.waitForSelector('.no-products, .no-results, .search-no-result', { timeout: 12000 })
+          ]);
+        };
+
+        try {
+          await waitForResults();
+        } catch (e) {
+          console.warn('⚠️  Reliance Digital search results still missing, reloading and retrying once');
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(2000);
+          await waitForResults().catch(() => { });
+        }
+
+        // Extra safeguard: if still no cards, attempt direct search URL as fallback
+        let hasCards = await page.$('.main-grid .product-card');
+        if (!hasCards) {
+          const fallbackUrl = `https://www.reliancedigital.in/products?q=${encodeURIComponent(productName)}&page_no=1&page_size=12&page_type=number`;
+          console.warn(`⚠️  No cards after onsite search, navigating to fallback URL: ${fallbackUrl}`);
+          await page.goto(fallbackUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+          await Promise.race([
+            page.waitForSelector('.main-grid .product-card', { timeout: 12000 }),
+            page.waitForSelector('.no-products, .no-results, .search-no-result', { timeout: 12000 })
+          ]).catch(() => {
+            console.warn('⚠️  Fallback Reliance Digital URL still did not produce product cards');
+          });
+          hasCards = await page.$('.main-grid .product-card');
+        }
+
+        const evalResult = await page.evaluate(({ maxResults, searchQuery, minSimilarity }) => {
           const products = [];
-          const cards = Array.from(document.querySelectorAll('.sp__product')).slice(0, maxResults * 2);
+          const debug = { steps: [] };
 
-          cards.forEach(card => {
-            const linkEl = card.querySelector('a.sp__product-img, a[href*="/products/"]');
-            if (!linkEl) return;
+          // New Reliance Digital DOM structure (main-grid > product-card)
+          let cards = Array.from(document.querySelectorAll('.main-grid .product-card'));
+          debug.steps.push(`Found ${cards.length} cards with .main-grid .product-card`);
+
+          if (cards.length === 0) {
+            cards = Array.from(document.querySelectorAll('[class*="product-card"]'));
+          }
+
+          if (cards.length === 0) {
+            cards = Array.from(document.querySelectorAll('.sp__product'));
+          }
+
+          cards = cards.slice(0, maxResults * 3);
+          debug.steps.push(`Found ${cards.length} cards for Reliance Digital search`);
+
+          const normalize = (text = '') =>
+            text
+              .toLowerCase()
+              .replace(/[^a-z0-9\s]/g, ' ')
+              .split(/\s+/)
+              .filter(w => w.length > 2);
+
+          const calculateSimilarity = (a, b) => {
+            const words1 = normalize(a);
+            const words2 = normalize(b);
+            if (!words1.length || !words2.length) return 0;
+            const commons = words1.filter(w => words2.includes(w));
+            return commons.length / Math.max(words1.length, words2.length);
+          };
+
+          cards.forEach((card, index) => {
+            debug.steps.push(`Processing card ${index + 1}/${cards.length}`);
+
+            // Link selection
+            let linkEl = card.querySelector('a.product-card-image, a[class*="product-card-image"]');
+            if (!linkEl) {
+              linkEl = card.querySelector('a[href*="/product/"], a[href*="/products/"], a[href*="/p/"]');
+            }
+
+            if (!linkEl) {
+              debug.steps.push(`  Card ${index + 1}: No link found, skipping`);
+              return;
+            }
 
             const href = linkEl.getAttribute('href');
             const url = href ? (href.startsWith('http') ? href : `https://www.reliancedigital.in${href}`) : null;
+            debug.steps.push(`  Card ${index + 1}: url found: ${url}`);
 
-            const titleEl = card.querySelector('.sp__product-name, .pdp__product-title');
-            const title = titleEl?.textContent?.trim() || '';
+            // Title selection
+            const titleEl =
+              card.querySelector('.card-info-container h2, .product-card-details h2, .header-area h2, .product-card-title, a[title]') ||
+              linkEl;
+            const title = titleEl?.textContent?.trim() || titleEl?.getAttribute('title') || '';
 
-            const priceEl = card.querySelector('.pdp__product-price, .sp__product-price');
+            // Price selection
+            const priceEl =
+              card.querySelector('.product-card-price, .price-container .price, .pdp__product-price') ||
+              card.querySelector('[class*="price"]');
             const priceText = priceEl?.textContent?.replace(/[^\d.]/g, '');
             const price = priceText ? parseFloat(priceText) : null;
 
-            if (title && url) {
+            const similarity = calculateSimilarity(searchQuery, title);
+            debug.steps.push(`  Card ${index + 1}: similarity ${(similarity * 100).toFixed(1)}%`);
+
+            if (title && url && similarity >= minSimilarity) {
               products.push({ title, url, price });
+              debug.steps.push(
+                `  Card ${index + 1}: ✅ Added product "${title.substring(0, 60)}" with price ${price || 'N/A'}`
+              );
+            } else {
+              debug.steps.push(
+                `  Card ${index + 1}: ❌ Skipped (title=${!!title}, url=${!!url}, similarity ${(similarity * 100).toFixed(1)}%)`
+              );
             }
           });
 
-          return products.slice(0, maxResults);
-        }, limit);
+          return { products: products.slice(0, maxResults), debug };
+        }, { maxResults: limit, searchQuery: productName, minSimilarity: 0.6 });
 
         await context.close();
-        console.log(`✅ Found ${results.length} Reliance Digital results`);
-        return results;
+
+        let products = evalResult;
+        if (evalResult && evalResult.debug) {
+          // evalResult.debug.steps.forEach(step => console.log(`   ${step}`));
+          // console.log(`✅ Result Found ${evalResult.products.length} products`);
+          products = evalResult.products;
+        } else if (Array.isArray(evalResult)) {
+          // console.log(`✅ Page evaluation completed, found ${evalResult.length} results`);
+          products = evalResult;
+        } else {
+          // console.log('⚠️  Page evaluation returned unexpected format');
+          products = [];
+        }
+
+        // console.log(`✅ Found ${products.length} Reliance Digital results`);
+        return products;
       } catch (error) {
         console.error('❌ Reliance Digital search error:', error.message);
         await context.close().catch(() => { });
@@ -1422,7 +1537,7 @@ class ScraperService {
       reliancedigital: null
     };
 
-    console.log(`\n🔍 Finding "${productName}" across marketplaces (source: ${sourceMarketplace})`);
+    // console.log(`\n🔍 Finding "${productName}" across marketplaces (source: ${sourceMarketplace})`);
 
     // Search on Amazon if not already have URL
     if (sourceMarketplace !== 'amazon' && !existingUrls.amazon) {
@@ -1455,12 +1570,12 @@ class ScraperService {
               };
 
               if (productInfo.price) {
-                console.log(`✅ Found on Amazon: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - ₹${productInfo.price}`);
+                // console.log(`✅ Found on Amazon: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - ₹${productInfo.price}`);
               } else {
-                console.log(`⚠️  Found on Amazon: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - Price not available (scraping failed)`);
+                // console.log(`⚠️  Found on Amazon: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - Price not available (scraping failed)`);
               }
             } catch (error) {
-              console.log(`⚠️  Found Amazon URL but failed to scrape: ${error.message}`);
+              // console.log(`⚠️  Found Amazon URL but failed to scrape: ${error.message}`);
               results.amazon = {
                 url: bestMatch.url,
                 title: bestMatch.title,
@@ -1504,12 +1619,12 @@ class ScraperService {
               };
 
               if (productInfo.price) {
-                console.log(`✅ Found on Flipkart: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - ₹${productInfo.price}`);
+                // console.log(`✅ Found on Flipkart: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - ₹${productInfo.price}`);
               } else {
-                console.log(`⚠️  Found on Flipkart: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - Price not available (scraping failed)`);
+                // console.log(`⚠️  Found on Flipkart: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - Price not available (scraping failed)`);
               }
             } catch (error) {
-              console.log(`⚠️  Found Flipkart URL but failed to scrape: ${error.message}`);
+              // console.log(`⚠️  Found Flipkart URL but failed to scrape: ${error.message}`);
               results.flipkart = {
                 url: bestMatch.url,
                 title: bestMatch.title,
@@ -1553,12 +1668,12 @@ class ScraperService {
               };
 
               if (productInfo.price) {
-                console.log(`✅ Found on Reliance Digital: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - ₹${productInfo.price}`);
+                // console.log(`✅ Found on Reliance Digital: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - ₹${productInfo.price}`);
               } else {
-                console.log(`⚠️  Found on Reliance Digital: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - Price not available (scraping failed)`);
+                // console.log(`⚠️  Found on Reliance Digital: ${bestMatch.title} (${(bestScore * 100).toFixed(0)}% match) - Price not available (scraping failed)`);
               }
             } catch (error) {
-              console.log(`⚠️  Found Reliance Digital URL but failed to scrape: ${error.message}`);
+              // console.log(`⚠️  Found Reliance Digital URL but failed to scrape: ${error.message}`);
               results.reliancedigital = {
                 url: bestMatch.url,
                 title: bestMatch.title,
@@ -1572,6 +1687,9 @@ class ScraperService {
         console.error(`❌ Error searching Reliance Digital: ${error.message}`);
       }
     }
+
+
+    console.log("final comparision results", results);
 
     return results;
   }

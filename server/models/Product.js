@@ -36,12 +36,14 @@ const productSchema = new mongoose.Schema({
   urls: {
     amazon: { type: String },
     flipkart: { type: String },
-    myntra: { type: String }
+    myntra: { type: String },
+    reliancedigital: { type: String }
   },
   currentPrice: {
     amazon: { type: Number },
     flipkart: { type: Number },
-    myntra: { type: Number }
+    myntra: { type: Number },
+    reliancedigital: { type: Number }
   },
   priceHistory: [priceHistorySchema],
   aiAnalysis: {
@@ -99,6 +101,7 @@ const productSchema = new mongoose.Schema({
 productSchema.index({ 'urls.amazon': 1 });
 productSchema.index({ 'urls.flipkart': 1 });
 productSchema.index({ 'urls.myntra': 1 });
+productSchema.index({ 'urls.reliancedigital': 1 });
 productSchema.index({ lastChecked: 1 });
 productSchema.index({ createdAt: -1 });
 

@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   CheckCircle,
   BarChart3,
-  Search,
   ShoppingBag
 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine } from 'recharts'
@@ -32,9 +31,13 @@ const ProductDetail = () => {
   const [timeRange, setTimeRange] = useState('max')
   const [searchingMarketplaces, setSearchingMarketplaces] = useState(false)
   const [comparison, setComparison] = useState(null)
+  const [autoSearchAttempted, setAutoSearchAttempted] = useState(false)
+
+  const REQUIRED_MARKETPLACES = ['amazon', 'flipkart', 'reliancedigital']
 
   useEffect(() => {
     fetchProductData()
+    setAutoSearchAttempted(false)
   }, [id])
 
   const fetchProductData = async () => {
@@ -82,14 +85,16 @@ const ProductDetail = () => {
     }
   }
 
-  const handleFindMarketplaces = async () => {
+  const startMarketplaceSearch = async (showToast = true) => {
     try {
       setSearchingMarketplaces(true)
       const response = await apiService.findProductOnMarketplaces(id)
-      toast.success('Searching marketplaces... This may take a minute.', {
-        icon: '🔍',
-        duration: 5000
-      })
+      if (showToast) {
+        toast.success('Searching marketplaces... This may take a minute.', {
+          icon: '🔍',
+          duration: 5000
+        })
+      }
       
       // Refresh product data after a delay to allow background search to complete
       setTimeout(() => {
@@ -98,11 +103,31 @@ const ProductDetail = () => {
       }, 3000)
     } catch (error) {
       console.error('Error finding marketplaces:', error)
-      toast.error('Failed to search marketplaces')
+      if (showToast) {
+        toast.error('Failed to search marketplaces')
+      } else {
+        console.warn('Background marketplace search failed; will rely on next refresh')
+      }
     } finally {
       setSearchingMarketplaces(false)
     }
   }
+
+  useEffect(() => {
+    if (!comparison || searchingMarketplaces || autoSearchAttempted) return
+
+    const available = new Set(
+      (comparison.marketplaces || [])
+        .filter(marketplace => marketplace.available && marketplace.price)
+        .map(marketplace => marketplace.marketplace)
+    )
+
+    const missing = REQUIRED_MARKETPLACES.filter(market => !available.has(market))
+    if (missing.length > 0) {
+      startMarketplaceSearch(false)
+      setAutoSearchAttempted(true)
+    }
+  }, [comparison, searchingMarketplaces, autoSearchAttempted])
 
   const handleUpdatePrice = async () => {
     try {
@@ -342,20 +367,14 @@ const ProductDetail = () => {
                   <ShoppingBag className="w-6 h-6 mr-2 text-blue-600" />
                   Price Comparison Across Marketplaces
                 </h3>
-                <button
-                  onClick={handleFindMarketplaces}
-                  disabled={searchingMarketplaces}
-                  className="btn btn-secondary text-sm"
-                  title="Search for this product on other marketplaces"
-                >
-                  {searchingMarketplaces ? (
-                    <div className="loading w-4 h-4 mr-1"></div>
-                  ) : (
-                    <Search className="w-4 h-4 mr-1" />
-                  )}
-                  Find on Other Stores
-                </button>
               </div>
+
+              {searchingMarketplaces && (
+                <div className="flex items-center text-sm text-blue-600 mb-4">
+                  <div className="loading w-4 h-4 mr-2"></div>
+                  <span>Searching other marketplaces for fresh prices...</span>
+                </div>
+              )}
 
               {comparison && comparison.marketplaces.length > 0 ? (
                 <div className="bg-gradient-to-br from-blue-50 via-white to-indigo-50 border border-blue-200 rounded-xl p-6">
