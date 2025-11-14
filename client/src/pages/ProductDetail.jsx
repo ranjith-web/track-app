@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { 
   ArrowLeft, 
@@ -32,15 +32,23 @@ const ProductDetail = () => {
   const [searchingMarketplaces, setSearchingMarketplaces] = useState(false)
   const [comparison, setComparison] = useState(null)
   const [autoSearchAttempted, setAutoSearchAttempted] = useState(false)
+  const comparisonPollAttempts = useRef(0)
+  const comparisonPollTimer = useRef(null)
 
   const REQUIRED_MARKETPLACES = ['amazon', 'flipkart', 'reliancedigital']
+  const MAX_AUTO_POLL_ATTEMPTS = 6
+  const AUTO_POLL_INTERVAL = 4000
 
-  useEffect(() => {
-    fetchProductData()
-    setAutoSearchAttempted(false)
+  const loadComparison = useCallback(async () => {
+    try {
+      const response = await apiService.getProductComparison(id)
+      setComparison(response.comparison)
+    } catch (error) {
+      console.error('Error loading comparison:', error)
+    }
   }, [id])
 
-  const fetchProductData = async () => {
+  const fetchProductData = useCallback(async () => {
     try {
       setLoading(true)
       const [productResponse, historyResponse] = await Promise.all([
@@ -66,7 +74,7 @@ const ProductDetail = () => {
       handleGetInsights(true) // Pass true to indicate auto-load
       
       // Load marketplace comparison
-      loadComparison()
+      await loadComparison()
       
     } catch (error) {
       console.error('Error fetching product data:', error)
@@ -74,16 +82,12 @@ const ProductDetail = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [id, loadComparison])
 
-  const loadComparison = async () => {
-    try {
-      const response = await apiService.getProductComparison(id)
-      setComparison(response.comparison)
-    } catch (error) {
-      console.error('Error loading comparison:', error)
-    }
-  }
+  useEffect(() => {
+    setAutoSearchAttempted(false)
+    fetchProductData()
+  }, [fetchProductData])
 
   const startMarketplaceSearch = async (showToast = true) => {
     try {
@@ -96,11 +100,9 @@ const ProductDetail = () => {
         })
       }
       
-      // Refresh product data after a delay to allow background search to complete
-      setTimeout(() => {
-        fetchProductData()
-        loadComparison()
-      }, 3000)
+      // Refresh immediately (API waits for scraping to finish)
+      await fetchProductData()
+      await loadComparison()
     } catch (error) {
       console.error('Error finding marketplaces:', error)
       if (showToast) {
@@ -128,6 +130,41 @@ const ProductDetail = () => {
       setAutoSearchAttempted(true)
     }
   }, [comparison, searchingMarketplaces, autoSearchAttempted])
+
+  useEffect(() => {
+    if (!comparison) return
+
+    const available = new Set(
+      (comparison.marketplaces || [])
+        .filter(marketplace => marketplace.available && marketplace.price)
+        .map(marketplace => marketplace.marketplace)
+    )
+    const missing = REQUIRED_MARKETPLACES.filter(market => !available.has(market))
+
+    if (missing.length === 0) {
+      comparisonPollAttempts.current = 0
+      if (comparisonPollTimer.current) {
+        clearTimeout(comparisonPollTimer.current)
+        comparisonPollTimer.current = null
+      }
+      return
+    }
+
+    if (searchingMarketplaces) return
+    if (comparisonPollAttempts.current >= MAX_AUTO_POLL_ATTEMPTS) return
+
+    comparisonPollTimer.current = setTimeout(async () => {
+      comparisonPollAttempts.current += 1
+      await loadComparison()
+    }, AUTO_POLL_INTERVAL)
+
+    return () => {
+      if (comparisonPollTimer.current) {
+        clearTimeout(comparisonPollTimer.current)
+        comparisonPollTimer.current = null
+      }
+    }
+  }, [comparison, searchingMarketplaces, loadComparison])
 
   const handleUpdatePrice = async () => {
     try {
